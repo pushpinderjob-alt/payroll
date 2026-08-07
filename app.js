@@ -277,6 +277,12 @@
     info.innerHTML = '<div class="name"></div><div class="salary"></div>';
     info.querySelector(".name").textContent = user.name;
     info.querySelector(".salary").textContent = "Monthly: " + money(user.salary);
+    if (rec && rec.task) {
+      var task = document.createElement("div");
+      task.className = "att-task";
+      task.textContent = "Task: " + rec.task;
+      info.appendChild(task);
+    }
 
     var times = document.createElement("div");
     times.className = "att-times";
@@ -627,24 +633,23 @@
     var outBtn = $("#clockOutBtn");
     inBtn.disabled = false;
     outBtn.disabled = true;
+    $("#taskInput").value = (rec && rec.task) || "";
 
-    if (!rec) {
-      status.textContent = "Not clocked in yet today.";
+    if (!rec || !rec.clock_in) {
+      status.textContent = (rec && rec.status === "leave")
+        ? "Marked as paid leave today."
+        : "Not clocked in yet today.";
       return;
     }
-    if (rec.clock_in && !rec.clock_out) {
+    if (!rec.clock_out) {
       status.textContent = "Clocked in at " + rec.clock_in + ". Don't forget to clock out!";
       inBtn.disabled = true;
       outBtn.disabled = false;
       return;
     }
-    if (rec.clock_in && rec.clock_out) {
-      status.textContent = "Clocked out at " + rec.clock_out + " (in at " + rec.clock_in + ", " +
-        hoursBetween(rec.clock_in, rec.clock_out).toFixed(2) + " h).";
-      inBtn.disabled = true;
-      return;
-    }
-    status.textContent = rec.status === "leave" ? "Marked as paid leave today." : "Marked as absent today.";
+    status.textContent = "Clocked out at " + rec.clock_out + " (in at " + rec.clock_in + ", " +
+      hoursBetween(rec.clock_in, rec.clock_out).toFixed(2) + " h).";
+    inBtn.disabled = true;
   }
 
   async function doClock(action) {
@@ -682,7 +687,7 @@
   function renderDashTable(records, tbody) {
     tbody.innerHTML = "";
     if (records.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="muted">No records this month yet.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="muted">No records this month yet.</td></tr>';
       return;
     }
     records.slice().reverse().forEach(function (r) {
@@ -695,7 +700,8 @@
         '<td class="num">' + esc(r.clock_in || "-") + "</td>" +
         '<td class="num">' + esc(r.clock_out || "-") + "</td>" +
         '<td class="num">' + (r.status === "present" ? hours.toFixed(2) + " h" : "-") + "</td>" +
-        '<td><span class="badge ' + badgeClass + '">' + statusLabel + "</span></td>";
+        '<td><span class="badge ' + badgeClass + '">' + statusLabel + "</span></td>" +
+        '<td class="task-cell">' + (r.task ? esc(r.task) : '-') + "</td>";
       tbody.appendChild(tr);
     });
   }
@@ -848,6 +854,22 @@
   function wireEmployee() {
     $("#clockInBtn").addEventListener("click", function () { doClock("in"); });
     $("#clockOutBtn").addEventListener("click", function () { doClock("out"); });
+  }
+
+  function wireTask() {
+    $("#taskSaveBtn").addEventListener("click", async function () {
+      var task = $("#taskInput").value.trim();
+      try {
+        await api("/api/me/task", { method: "PUT", body: { date: todayStr(), task: task } });
+        var saved = $("#taskSaved");
+        saved.classList.remove("hidden");
+        clearTimeout(saved._timer);
+        saved._timer = setTimeout(function () { saved.classList.add("hidden"); }, 2200);
+        renderEmployeeDashboard();
+      } catch (e) {
+        toast(e.message, true);
+      }
+    });
   }
 
   /* ================= Corrections ================= */
@@ -1065,6 +1087,7 @@
     wireAuth();
     wireAdmin();
     wireEmployee();
+    wireTask();
     wireCorrections();
     restoreSession();
   });

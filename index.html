@@ -237,6 +237,16 @@
           </div>
         </div>
 
+        <div class="card task-card">
+          <h3 class="card-title">Today's Task</h3>
+          <p class="muted">What are you working on today? This is saved for the day and visible to your admin.</p>
+          <textarea id="taskInput" rows="3" maxlength="1000" placeholder="e.g. Update client invoices, call the supplier about the order..."></textarea>
+          <div class="task-actions">
+            <span class="task-saved hidden" id="taskSaved">Saved &#10003;</span>
+            <button class="btn primary" id="taskSaveBtn">Save Task</button>
+          </div>
+        </div>
+
         <div class="report-cards" id="dashStats"></div>
 
         <div class="card">
@@ -250,6 +260,7 @@
                   <th class="num">Clock Out</th>
                   <th class="num">Hours</th>
                   <th>Status</th>
+                  <th>Task</th>
                 </tr>
               </thead>
               <tbody></tbody>
