@@ -7,157 +7,247 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <div class="brand">
+
+  <!-- ============ AUTH VIEW ============ -->
+  <div id="authView" class="auth-wrap hidden">
+    <div class="auth-card">
+      <div class="auth-brand">
         <span class="brand-mark">TKSR</span>
         <div class="brand-text">
-          <h1>Payroll & Attendance</h1>
+          <h1>Payroll &amp; Attendance</h1>
           <p>TKSR Product Services</p>
         </div>
       </div>
-      <nav class="tabs" id="tabs">
-        <button class="tab active" data-tab="attendance">Attendance</button>
-        <button class="tab" data-tab="employees">Employees</button>
-        <button class="tab" data-tab="reports">Reports</button>
-        <button class="tab" data-tab="settings">Settings</button>
-      </nav>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-mode="login">Sign In</button>
+        <button type="button" class="auth-tab" data-mode="signup">Create Account</button>
+      </div>
+
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" autocomplete="email" required placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn primary full">Sign In</button>
+      </form>
+
+      <form id="signupForm" class="hidden" novalidate>
+        <div class="field">
+          <label for="suName">Full Name</label>
+          <input type="text" id="suName" autocomplete="name" required placeholder="e.g. Ravi Kumar">
+        </div>
+        <div class="field">
+          <label for="suEmail">Email</label>
+          <input type="email" id="suEmail" autocomplete="email" required placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="suPassword">Password (min 6 characters)</label>
+          <input type="password" id="suPassword" autocomplete="new-password" required minlength="6">
+        </div>
+        <button type="submit" class="btn primary full">Create Account</button>
+      </form>
+
+      <p id="authError" class="auth-error hidden"></p>
+      <p id="authHint" class="auth-hint">The first account created becomes the administrator.</p>
     </div>
-  </header>
+  </div>
 
-  <main class="container">
-
-    <!-- ============ ATTENDANCE ============ -->
-    <section id="tab-attendance" class="tab-panel active">
-      <div class="panel-head">
-        <div>
-          <h2>Daily Attendance</h2>
-          <p class="muted">Mark employees present/absent and record clock in/out times.</p>
+  <!-- ============ APP VIEW ============ -->
+  <div id="appView" class="hidden">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark">TKSR</span>
+          <div class="brand-text">
+            <h1>Payroll &amp; Attendance</h1>
+            <p>TKSR Product Services</p>
+          </div>
         </div>
-        <div class="date-nav">
-          <button class="btn ghost" id="prevDay" title="Previous day">&larr;</button>
-          <input type="date" id="attDate" class="date-input">
-          <button class="btn ghost" id="nextDay" title="Next day">&rarr;</button>
-          <button class="btn ghost" id="todayBtn">Today</button>
+        <div class="topbar-right">
+          <div class="user-chip">
+            <strong id="userName"></strong>
+            <span id="userRole" class="role-label"></span>
+          </div>
+          <button class="btn ghost-light" id="logoutBtn">Sign Out</button>
         </div>
       </div>
+      <nav id="roleTabs" class="tabs tabs-center"></nav>
+    </header>
 
-      <div id="emptyEmployees" class="empty-state hidden">
-        <p>No employees added yet.</p>
-        <button class="btn primary" data-goto="employees">Add Employees</button>
-      </div>
+    <main class="container">
 
-      <div id="attendanceList" class="card-list"></div>
-      <div class="summary-strip" id="attSummary"></div>
-    </section>
-
-    <!-- ============ EMPLOYEES ============ -->
-    <section id="tab-employees" class="tab-panel">
-      <div class="panel-head">
-        <div>
-          <h2>Employees</h2>
-          <p class="muted">Manage employee names and monthly salaries.</p>
+      <!-- ===== ADMIN: ATTENDANCE (day view) ===== -->
+      <section id="tab-attendance" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Attendance</h2>
+            <p class="muted">View the day, mark leave/absence, and correct clock times.</p>
+          </div>
+          <div class="date-nav">
+            <button class="btn ghost" id="prevDay">&larr;</button>
+            <input type="date" id="attDate" class="date-input">
+            <button class="btn ghost" id="nextDay">&rarr;</button>
+            <button class="btn ghost" id="todayBtn">Today</button>
+          </div>
         </div>
-        <button class="btn primary" id="addEmployeeBtn">+ Add Employee</button>
-      </div>
+        <div id="adminAttList" class="card-list"></div>
+        <div id="adminAttSummary" class="summary-strip hidden"></div>
+      </section>
 
-      <div id="employeeFormWrap" class="hidden">
-        <form id="employeeForm" class="form-card">
-          <h3 id="employeeFormTitle">Add Employee</h3>
+      <!-- ===== ADMIN: EMPLOYEES ===== -->
+      <section id="tab-employees" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Employees</h2>
+            <p class="muted">Create employee accounts and set monthly salaries.</p>
+          </div>
+          <button class="btn primary" id="addEmployeeBtn">+ Add Employee</button>
+        </div>
+        <div id="employeeFormWrap" class="hidden">
+          <form id="employeeForm" class="form-card" novalidate>
+            <h3 id="employeeFormTitle">Add Employee</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label for="empName">Full Name</label>
+                <input type="text" id="empName" required placeholder="e.g. Ravi Kumar">
+              </div>
+              <div class="field">
+                <label for="empEmail">Email (login)</label>
+                <input type="email" id="empEmail" required placeholder="employee@example.com">
+              </div>
+              <div class="field">
+                <label for="empSalary">Monthly Salary (&#8377;)</label>
+                <input type="number" id="empSalary" min="0" step="0.01" required placeholder="e.g. 25000">
+              </div>
+              <div class="field">
+                <label for="empPassword">Temporary Password</label>
+                <input type="text" id="empPassword" minlength="6" placeholder="min 6 characters">
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn primary">Save</button>
+              <button type="button" class="btn ghost" id="cancelEmployeeForm">Cancel</button>
+            </div>
+          </form>
+        </div>
+        <div id="employeeList" class="card-list"></div>
+      </section>
+
+      <!-- ===== ADMIN: REPORTS ===== -->
+      <section id="tab-reports" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Monthly Report</h2>
+            <p class="muted">Attendance, hours worked and salary to be paid.</p>
+          </div>
+          <div class="date-nav">
+            <button class="btn ghost" id="prevMonth">&larr;</button>
+            <input type="month" id="reportMonth" class="date-input">
+            <button class="btn ghost" id="nextMonth">&rarr;</button>
+          </div>
+        </div>
+        <div id="reportSummary" class="report-cards"></div>
+        <div class="card">
+          <div class="table-wrap">
+            <table id="reportTable">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th class="num">Monthly Salary</th>
+                  <th class="num">Present</th>
+                  <th class="num">Leave</th>
+                  <th class="num">Absent</th>
+                  <th class="num">Hours Worked</th>
+                  <th class="num">Salary This Month</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="report-actions">
+          <button class="btn primary" id="exportCsv">Export CSV</button>
+        </div>
+      </section>
+
+      <!-- ===== ADMIN: SETTINGS ===== -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Settings</h2>
+            <p class="muted">Configure working days and currency.</p>
+          </div>
+        </div>
+        <form id="settingsForm" class="form-card">
           <div class="form-grid">
             <div class="field">
-              <label for="empName">Full Name</label>
-              <input type="text" id="empName" required placeholder="e.g. Ravi Kumar">
+              <label for="workingDays">Working Days Per Week</label>
+              <select id="workingDays">
+                <option value="7">7 days (Mon - Sun)</option>
+                <option value="6" selected>6 days (Mon - Sat)</option>
+                <option value="5">5 days (Mon - Fri)</option>
+              </select>
             </div>
             <div class="field">
-              <label for="empSalary">Monthly Salary (&#8377;)</label>
-              <input type="number" id="empSalary" required min="0" step="0.01" placeholder="e.g. 25000">
+              <label for="currency">Currency Symbol</label>
+              <input type="text" id="currency" maxlength="4">
             </div>
           </div>
           <div class="form-actions">
-            <button type="submit" class="btn primary">Save</button>
-            <button type="button" class="btn ghost" id="cancelEmployeeForm">Cancel</button>
+            <button type="submit" class="btn primary">Save Settings</button>
           </div>
         </form>
-      </div>
-
-      <div id="employeeList" class="card-list"></div>
-    </section>
-
-    <!-- ============ REPORTS ============ -->
-    <section id="tab-reports" class="tab-panel">
-      <div class="panel-head">
-        <div>
-          <h2>Monthly Report</h2>
-          <p class="muted">Summary of attendance, hours worked and salary to be paid.</p>
+        <div class="form-card danger-card">
+          <h3>Danger Zone</h3>
+          <p class="muted">Delete all attendance records for all employees.</p>
+          <button class="btn danger" id="clearAttendanceBtn">Clear All Attendance</button>
         </div>
-        <div class="date-nav">
-          <button class="btn ghost" id="prevMonth">&larr;</button>
-          <input type="month" id="reportMonth" class="date-input">
-          <button class="btn ghost" id="nextMonth">&rarr;</button>
-        </div>
-      </div>
+      </section>
 
-      <div id="reportSummary" class="report-cards"></div>
-      <div class="card">
-        <div class="table-wrap">
-          <table id="reportTable">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Monthly Salary</th>
-                <th>Present</th>
-                <th>Leave</th>
-                <th>Absent</th>
-                <th>Hours Worked</th>
-                <th>Salary This Month</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-      <div class="report-actions">
-        <button class="btn primary" id="exportCsv">Export CSV</button>
-      </div>
-    </section>
-
-    <!-- ============ SETTINGS ============ -->
-    <section id="tab-settings" class="tab-panel">
-      <div class="panel-head">
-        <div>
-          <h2>Settings</h2>
-          <p class="muted">Configure working days and currency.</p>
-        </div>
-      </div>
-      <form id="settingsForm" class="form-card">
-        <div class="form-grid">
-          <div class="field">
-            <label for="workingDays">Working Days Per Week</label>
-            <select id="workingDays">
-              <option value="7">7 days (Mon - Sun)</option>
-              <option value="6" selected>6 days (Mon - Sat)</option>
-              <option value="5">5 days (Mon - Fri)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="currency">Currency Symbol</label>
-            <input type="text" id="currency" maxlength="4" value="&#8377;">
+      <!-- ===== EMPLOYEE: DASHBOARD ===== -->
+      <section id="tab-dashboard" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>My Attendance</h2>
+            <p class="muted" id="dashDate">Clock in when you start work and clock out when you finish.</p>
           </div>
         </div>
-        <div class="form-actions">
-          <button type="submit" class="btn primary">Save Settings</button>
+
+        <div class="clock-card" id="clockCard">
+          <div class="clock-status" id="clockStatus">Loading...</div>
+          <div class="clock-actions">
+            <button class="btn big primary" id="clockInBtn">Clock In</button>
+            <button class="btn big ghost" id="clockOutBtn" disabled>Clock Out</button>
+          </div>
         </div>
-      </form>
 
-      <div class="form-card danger-card">
-        <h3>Danger Zone</h3>
-        <p class="muted">Reset all employees and attendance records. This cannot be undone.</p>
-        <button class="btn danger" id="resetAll">Erase All Data</button>
-      </div>
-    </section>
+        <div class="report-cards" id="dashStats"></div>
 
-  </main>
+        <div class="card">
+          <h3 class="card-title">This Month</h3>
+          <div class="table-wrap">
+            <table id="dashTable">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th class="num">Clock In</th>
+                  <th class="num">Clock Out</th>
+                  <th class="num">Hours</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
 
   <div id="toast" class="toast hidden"></div>
   <script src="app.js"></script>

@@ -1,60 +1,95 @@
-# Payroll & Attendance App — TKSR Product Services
+# Payroll & Attendance — TKSR Product Services
 
-A simple daily attendance and salary application built for **GitHub Pages** (static hosting, no server needed).
+Attendance + payroll app for a small business. Employees log in, clock in/out, and admins manage accounts and salary.
 
-- Track daily attendance with **clock in/out** times
-- Each employee has a **monthly salary**
-- Computes **hours worked** and **salary to be paid** per day and per month
-- Working-day aware (5/6/7 day weeks) — salary is split into a daily rate
-- All data is stored in the browser (localStorage); no data leaves the device
-- Export any month's report to **CSV**
+## Architecture
 
-## Files
+- **Frontend** (static) — hosted on **GitHub Pages** at `payroll.tksrproductservices.com`
+- **Backend** — **Cloudflare Worker** (API) + **Cloudflare D1** (SQLite database)
+- **Auth** — email + password. JWT sessions. Password hashing via PBKDF2 (Web Crypto).
+- **Roles**
+  - **Admin** — first account created is the admin. Manages employees, marks leave/absence, corrects clock times, views monthly reports, exports CSV, configures settings.
+  - **Employee** — logs in with an admin-created account, clocks in/out, sees own attendance and salary.
 
-| File        | Purpose                                        |
-|-------------|------------------------------------------------|
-| `index.html`| App interface                                  |
-| `styles.css`| Styling                                        |
-| `app.js`    | Attendance, payroll and reporting logic        |
-| `CNAME`     | Binds the site to `payroll.tksrproductservices.com` |
+## Repository layout
 
-## Deploying to GitHub Pages
+```
+index.html          Frontend (login + role-based app)
+styles.css          Styling
+app.js              Frontend logic (calls the Worker API)
+CNAME               Binds GitHub Pages to payroll.tksrproductservices.com
+worker/
+  wrangler.toml     Cloudflare Worker config (edit database_id)
+  schema.sql        D1 database schema
+  src/index.js      Cloudflare Worker API
+```
 
-1. Create a new repository on GitHub, e.g. `payroll`. It can be **private** — GitHub Pages works on private repos.
-2. Upload these 4 files (`index.html`, `styles.css`, `app.js`, `CNAME`) to the `main` branch.
-3. Go to **Settings → Pages** and set:
-   - Source: **Deploy from a branch**
-   - Branch: `main`, folder: `/ (root)`
-4. GitHub will start serving it at `https://<your-username>.github.io/<repo>/`.
+## 1. Deploy the frontend (GitHub Pages) — already done
 
-## Pointing payroll.tksrproductservices.com to it
+Repo: `https://github.com/pushpinderjob-alt/payroll` — public, main branch, Actions-based Pages deployment.
 
-GitHub Pages allows **one custom domain per project site**, so a second subdomain like `payroll.` works alongside your existing `www.` site (it just needs its own repository).
+## 2. Deploy the backend (Cloudflare Worker)
 
-1. Go to **Settings → Pages** in the repo and enter the custom domain:
-   `payroll.tksrproductservices.com`
-2. Tick **Enforce HTTPS** after GitHub validates the domain.
-3. In your DNS provider's dashboard (where `tksrproductservices.com` is managed), add this record:
+Requires a free Cloudflare account.
 
-   | Type  | Name                          | Value                      |
-   |-------|-------------------------------|----------------------------|
-   | CNAME | `payroll`                     | `<your-username>.github.io`|
+```powershell
+cd worker
+npm i -g wrangler            # or: npx wrangler
+wrangler login               # opens browser to authenticate your Cloudflare account
+wrangler d1 create tksr-payroll     # note the printed database_id
+```
 
-4. Wait for DNS to propagate (minutes to a few hours). Your app will then be live at:
-   **https://payroll.tksrproductservices.com**
+Edit `worker/wrangler.toml`: replace `database_id = "REPLACE_WITH_DATABASE_ID"`.
 
-> Note: GitHub Pages custom domains must be added to the repo's Pages settings **and** have a matching DNS record. The included `CNAME` file tells GitHub Pages which domain to expect on every deploy.
+```powershell
+wrangler d1 execute tksr-payroll --remote --file=schema.sql   # create tables
+wrangler secret put JWT_SECRET                                # any long random string
+wrangler deploy                                               # deploy the API
+```
 
-## Usage
+The API URL will look like `https://tksr-payroll-api.<subdomain>.workers.dev`.
 
-1. **Employees tab** — add each employee with their name and monthly salary.
-2. **Attendance tab** — pick a date, click the status badge to cycle **Present → Paid Leave → Absent**, and enter clock in/out times for present employees. The app shows hours worked and that day's pay instantly.
-3. **Reports tab** — pick a month to see days present/leave/absent, total hours, and salary to be paid. Click **Export CSV** for an Excel-compatible file.
-4. **Settings tab** — choose working days per week and currency symbol.
+## 3. Point the frontend at the API
 
-## How salary is calculated
+In `app.js`, set `API_BASE` to your worker URL:
 
-- Working days in the month are counted based on your setting (default: Mon–Sat).
-- Daily rate = monthly salary ÷ working days in the month.
+```js
+var API_BASE = "https://tksr-payroll-api.xxxxx.workers.dev";
+```
+
+Commit and push to `main` — GitHub Actions redeploys automatically.
+
+## 4. First run
+
+1. Open `https://payroll.tksrproductservices.com`
+2. Click **Create Account** — the first account automatically becomes **Admin**.
+3. Sign in, go to **Employees**, add employees with their email + a temporary password (give it to them).
+4. Employees sign in and use **Clock In / Clock Out**.
+5. Admin uses **Attendance** (mark leave/absence, correct times) and **Reports** (monthly summary + CSV).
+
+## API summary
+
+| Method | Path | Access | Purpose |
+|--------|------|--------|---------|
+| POST | `/api/auth/signup` | public (first user) / admin | Create admin (bootstrap) or employee |
+| POST | `/api/auth/login` | public | Login -> JWT + user |
+| GET | `/api/me` | any | Current user |
+| GET | `/api/me/status?date=` | employee | Today's record |
+| GET | `/api/me/attendance?month=` | employee | Own month records |
+| POST | `/api/clock/in` | employee | Clock in (`{date, time}`) |
+| POST | `/api/clock/out` | employee | Clock out (`{date, time}`) |
+| GET | `/api/users` | admin | List users |
+| POST | `/api/users` | admin | Create user |
+| PUT | `/api/users/:id` | admin | Update user / reset password |
+| DELETE | `/api/users/:id` | admin | Delete user + records |
+| GET | `/api/attendance?date= or ?month=` | admin | Records |
+| POST | `/api/attendance` | admin | Upsert record (leave/absent/times) |
+| DELETE | `/api/attendance/:id` | admin | Delete record |
+| GET/PUT | `/api/settings` | any / admin | Working days + currency |
+
+## Salary calculation
+
+- Working days per month counted from `work_days_per_week` (default Mon–Sat).
+- Daily rate = monthly salary ÷ working days in month.
 - **Present** or **Paid Leave** = one daily rate. **Absent** = nothing.
-- Salary shown for the month = daily rate × (present + paid leave days) recorded so far.
+- Month salary shown = daily rate × (present + paid leave days) recorded.

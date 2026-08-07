@@ -1,0 +1,12 @@
+name = "tksr-payroll-api"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# The JWT signing secret. Set a strong random value with:
+#   npx wrangler secret put JWT_SECRET
+# (do not commit a real secret here)
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tksr-payroll"
+database_id = "7dbd3f1d-c273-4c1f-ac21-9765a8ba70ce"
