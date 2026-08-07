@@ -8,8 +8,8 @@ Attendance + payroll app for a small business. Employees log in, clock in/out, a
 - **Backend** — **Cloudflare Worker** (API) + **Cloudflare D1** (SQLite database)
 - **Auth** — email + password. JWT sessions. Password hashing via PBKDF2 (Web Crypto).
 - **Roles**
-  - **Admin** — first account created is the admin. Manages employees, marks leave/absence, corrects clock times, views monthly reports, exports CSV, configures settings.
-  - **Employee** — logs in with an admin-created account, clocks in/out, sees own attendance and salary.
+  - **Admin** — first account created is the admin. Manages employees, marks leave/absence, corrects clock times, approves clock-correction requests, views monthly reports, exports CSV, configures settings.
+  - **Employee** — logs in with an admin-created account, clocks in/out, sees own attendance, and requests clock corrections.
 
 ## Repository layout
 
@@ -64,8 +64,8 @@ Commit and push to `main` — GitHub Actions redeploys automatically.
 1. Open `https://payroll.tksrproductservices.com`
 2. Click **Create Account** — the first account automatically becomes **Admin**.
 3. Sign in, go to **Employees**, add employees with their email + a temporary password (give it to them).
-4. Employees sign in and use **Clock In / Clock Out**.
-5. Admin uses **Attendance** (mark leave/absence, correct times) and **Reports** (monthly summary + CSV).
+4. Employees sign in and use **Clock In / Clock Out**; they can also request a **clock correction** (missed/mistyped time) from their dashboard.
+5. Admin uses **Attendance** (mark leave/absence, correct times), **Requests** (approve/reject employee clock corrections), and **Reports** (monthly summary + CSV).
 
 ## API summary
 
@@ -78,6 +78,11 @@ Commit and push to `main` — GitHub Actions redeploys automatically.
 | GET | `/api/me/attendance?month=` | employee | Own month records |
 | POST | `/api/clock/in` | employee | Clock in (`{date, time}`) |
 | POST | `/api/clock/out` | employee | Clock out (`{date, time}`) |
+| POST | `/api/corrections` | employee | Create clock-correction request |
+| GET | `/api/corrections/mine` | employee | Own correction requests |
+| GET | `/api/corrections?status=` | admin | List requests (optional pending filter) |
+| POST | `/api/corrections/:id/approve` | admin | Approve (updates attendance) |
+| POST | `/api/corrections/:id/reject` | admin | Reject |
 | GET | `/api/users` | admin | List users |
 | POST | `/api/users` | admin | Create user |
 | PUT | `/api/users/:id` | admin | Update user / reset password |
