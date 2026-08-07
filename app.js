@@ -156,6 +156,9 @@
     } catch (e) { /* non-fatal */ }
     if (currentUser.role === "admin") {
       renderAdminAttendance();
+      refreshReqBadge();
+      if (window._reqTimer) clearInterval(window._reqTimer);
+      window._reqTimer = setInterval(refreshReqBadge, 60000);
     } else {
       renderEmployeeDashboard();
     }
@@ -183,6 +186,7 @@
         { id: "attendance", label: "Attendance" },
         { id: "employees", label: "Employees" },
         { id: "reports", label: "Reports" },
+        { id: "requests", label: "Requests" },
         { id: "settings", label: "Settings" }
       ];
     } else {
@@ -193,6 +197,13 @@
       b.className = "tab" + (t.id === tabs[0].id ? " active" : "");
       b.dataset.tab = t.id;
       b.textContent = t.label;
+      if (t.id === "requests") {
+        var badge = document.createElement("span");
+        badge.className = "tab-badge hidden";
+        badge.id = "reqBadge";
+        b.appendChild(document.createTextNode(" "));
+        b.appendChild(badge);
+      }
       b.addEventListener("click", function () { switchTab(t.id); });
       nav.appendChild(b);
     });
@@ -206,6 +217,7 @@
     if (tab === "attendance") renderAdminAttendance();
     if (tab === "employees") renderEmployees();
     if (tab === "reports") renderReports();
+    if (tab === "requests") renderCorrections();
     if (tab === "settings") renderSettingsForm();
     if (tab === "dashboard") renderEmployeeDashboard();
   }
@@ -606,6 +618,7 @@
     } catch (e) {
       $("#clockStatus").textContent = "Error: " + e.message;
     }
+    renderMyCorrections();
   }
 
   function renderClockCard(rec, date) {
@@ -837,11 +850,222 @@
     $("#clockOutBtn").addEventListener("click", function () { doClock("out"); });
   }
 
+  /* ================= Corrections ================= */
+  var CORR_REASONS = {
+    forgot_clock_out: "Forgot to clock out",
+    clocked_out_early: "Clocked out too early",
+    forgot_clock_in: "Forgot to clock in",
+    wrong_time: "Wrong clock time",
+    other: "Other"
+  };
+
+  function reasonLabel(r) { return CORR_REASONS[r] || r; }
+
+  function corrTimesText(c) {
+    var parts = [];
+    if (c.current_clock_in || c.current_clock_out) {
+      parts.push("Current: " + (c.current_clock_in || "-") + " \u2192 " + (c.current_clock_out || "-"));
+    }
+    if (c.requested_clock_in || c.requested_clock_out) {
+      parts.push("Requested: " + (c.requested_clock_in || "-") + " \u2192 " + (c.requested_clock_out || "-"));
+    }
+    return parts.join(" \u00B7 ") || "No time change requested";
+  }
+
+  function corrBadgeEl(status) {
+    var b = document.createElement("span");
+    b.className = "badge " + (status === "approved" ? "ok" : status === "rejected" ? "bad" : "leave");
+    b.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+    return b;
+  }
+
+  function renderMyCorrections() {
+    var el = $("#myRequests");
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+    api("/api/corrections/mine").then(function (data) {
+      var list = data.corrections || [];
+      if (list.length === 0) {
+        el.innerHTML = '<div class="empty-state"><p>No correction requests yet.</p></div>';
+        return;
+      }
+      el.innerHTML = "";
+      list.forEach(function (c) {
+        var div = document.createElement("div");
+        div.className = "req-row";
+        var main = document.createElement("div");
+        main.className = "req-main";
+        var name = document.createElement("div");
+        name.className = "name";
+        name.textContent = c.work_date + " \u00B7 " + reasonLabel(c.reason);
+        main.appendChild(name);
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = corrTimesText(c);
+        if (c.note) meta.textContent += " \u2014 " + c.note;
+        main.appendChild(meta);
+        if (c.status !== "pending" && c.admin_note) {
+          var note = document.createElement("div");
+          note.className = "meta-note";
+          note.textContent = "Admin: " + c.admin_note;
+          main.appendChild(note);
+        }
+        div.appendChild(main);
+        div.appendChild(corrBadgeEl(c.status));
+        el.appendChild(div);
+      });
+    }).catch(function (e) {
+      el.innerHTML = '<div class="empty-state"><p>Error: ' + esc(e.message) + "</p></div>";
+    });
+  }
+
+  function renderCorrections() {
+    var el = $("#adminRequests");
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+    api("/api/corrections").then(function (data) {
+      var list = data.corrections || [];
+      if (list.length === 0) {
+        el.innerHTML = '<div class="empty-state"><p>No correction requests.</p></div>';
+      } else {
+        el.innerHTML = "";
+        list.forEach(function (c) { el.appendChild(adminReqRow(c)); });
+      }
+      refreshReqBadge();
+    }).catch(function (e) {
+      el.innerHTML = '<div class="empty-state"><p>Error: ' + esc(e.message) + "</p></div>";
+    });
+  }
+
+  function adminReqRow(c) {
+    var div = document.createElement("div");
+    div.className = "req-row" + (c.status === "pending" ? " pending" : "");
+    var main = document.createElement("div");
+    main.className = "req-main";
+    var name = document.createElement("div");
+    name.className = "name";
+    name.innerHTML = esc(c.user_name) + " \u00B7 " + esc(c.work_date) + " \u00B7 " + esc(reasonLabel(c.reason));
+    main.appendChild(name);
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = corrTimesText(c);
+    main.appendChild(meta);
+    if (c.note) {
+      var n = document.createElement("div");
+      n.className = "meta-note";
+      n.textContent = "Note: " + c.note;
+      main.appendChild(n);
+    }
+    if (c.status !== "pending" && c.admin_note) {
+      var an = document.createElement("div");
+      an.className = "meta-note";
+      an.textContent = "Admin: " + c.admin_note;
+      main.appendChild(an);
+    }
+    div.appendChild(main);
+    div.appendChild(corrBadgeEl(c.status));
+
+    if (c.status === "pending") {
+      var actions = document.createElement("div");
+      actions.className = "req-actions";
+      var ok = document.createElement("button");
+      ok.className = "btn primary";
+      ok.textContent = "Approve";
+      ok.addEventListener("click", function () { decideCorrection(c, true); });
+      var no = document.createElement("button");
+      no.className = "btn ghost";
+      no.textContent = "Reject";
+      no.addEventListener("click", function () { decideCorrection(c, false); });
+      actions.appendChild(ok);
+      actions.appendChild(no);
+      div.appendChild(actions);
+    }
+    return div;
+  }
+
+  async function decideCorrection(c, approve) {
+    var note = "";
+    if (approve) {
+      if (!confirm("Approve this request? Attendance for " + c.user_name + " on " + c.work_date + " will be updated.")) return;
+    } else {
+      note = prompt("Optional note to the employee:", "") || "";
+    }
+    try {
+      await api("/api/corrections/" + c.id + (approve ? "/approve" : "/reject"), {
+        method: "POST",
+        body: { admin_note: note }
+      });
+      toast(approve ? "Request approved" : "Request rejected");
+      renderCorrections();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
+  async function refreshReqBadge() {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      var data = await api("/api/corrections?status=pending");
+      var n = (data.corrections || []).length;
+      var badge = $("#reqBadge");
+      if (badge) {
+        badge.textContent = n > 99 ? "99+" : "" + n;
+        badge.classList.toggle("hidden", n === 0);
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+
+  function openCorrectionModal() {
+    $("#corrDate").value = todayStr();
+    $("#corrReason").value = "forgot_clock_out";
+    $("#corrIn").value = "";
+    $("#corrOut").value = "";
+    $("#corrNote").value = "";
+    $("#corrModal").classList.remove("hidden");
+  }
+
+  function closeCorrectionModal() {
+    $("#corrModal").classList.add("hidden");
+  }
+
+  function wireCorrections() {
+    $("#requestCorrectionBtn").addEventListener("click", openCorrectionModal);
+    $("#corrCancel").addEventListener("click", closeCorrectionModal);
+    $("#corrModal").addEventListener("click", function (e) {
+      if (e.target === this) closeCorrectionModal();
+    });
+    $("#corrForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var body = {
+        work_date: $("#corrDate").value,
+        reason: $("#corrReason").value,
+        requested_clock_in: $("#corrIn").value || null,
+        requested_clock_out: $("#corrOut").value || null,
+        note: $("#corrNote").value.trim()
+      };
+      if (!body.work_date) { toast("Select a date", true); return; }
+      if (!body.requested_clock_in && !body.requested_clock_out && !body.note) {
+        toast("Provide the correct time(s) or a note", true);
+        return;
+      }
+      try {
+        await api("/api/corrections", { method: "POST", body: body });
+        toast("Request submitted");
+        closeCorrectionModal();
+        renderEmployeeDashboard();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
+    $("#refreshReqs").addEventListener("click", renderCorrections);
+  }
+
   /* ================= Boot ================= */
   document.addEventListener("DOMContentLoaded", function () {
     wireAuth();
     wireAdmin();
     wireEmployee();
+    wireCorrections();
     restoreSession();
   });
 })();

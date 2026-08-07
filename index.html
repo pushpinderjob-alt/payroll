@@ -52,7 +52,6 @@
       </form>
 
       <p id="authError" class="auth-error hidden"></p>
-      <p id="authHint" class="auth-hint">The first account created becomes the administrator.</p>
     </div>
   </div>
 
@@ -208,6 +207,18 @@
         </div>
       </section>
 
+      <!-- ===== ADMIN: CORRECTION REQUESTS ===== -->
+      <section id="tab-requests" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Correction Requests</h2>
+            <p class="muted">Employees request changes when they miss or mistype a clock time. Approve to update their attendance.</p>
+          </div>
+          <button class="btn ghost" id="refreshReqs">Refresh</button>
+        </div>
+        <div id="adminRequests" class="request-list"></div>
+      </section>
+
       <!-- ===== EMPLOYEE: DASHBOARD ===== -->
       <section id="tab-dashboard" class="tab-panel">
         <div class="panel-head">
@@ -215,6 +226,7 @@
             <h2>My Attendance</h2>
             <p class="muted" id="dashDate">Clock in when you start work and clock out when you finish.</p>
           </div>
+          <button class="btn primary" id="requestCorrectionBtn">Request Correction</button>
         </div>
 
         <div class="clock-card" id="clockCard">
@@ -244,9 +256,58 @@
             </table>
           </div>
         </div>
+
+        <div class="card">
+          <h3 class="card-title">My Correction Requests</h3>
+          <p class="muted">Requests to fix a missed or wrong clock time. An admin must approve them.</p>
+          <div id="myRequests" class="request-list"></div>
+        </div>
       </section>
 
     </main>
+  </div>
+
+  <!-- ===== CORRECTION REQUEST MODAL ===== -->
+  <div id="corrModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Request Clock Correction</h3>
+      <form id="corrForm" novalidate>
+        <div class="form-grid">
+          <div class="field">
+            <label for="corrDate">Date</label>
+            <input type="date" id="corrDate" required>
+          </div>
+          <div class="field">
+            <label for="corrReason">Reason</label>
+            <select id="corrReason">
+              <option value="forgot_clock_out">Forgot to clock out</option>
+              <option value="clocked_out_early">Clocked out too early</option>
+              <option value="forgot_clock_in">Forgot to clock in</option>
+              <option value="wrong_time">Wrong clock time</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="corrIn">Correct Clock In</label>
+            <input type="time" id="corrIn">
+          </div>
+          <div class="field">
+            <label for="corrOut">Correct Clock Out</label>
+            <input type="time" id="corrOut">
+          </div>
+        </div>
+        <div class="field">
+          <label for="corrNote">Note</label>
+          <textarea id="corrNote" rows="3" placeholder="e.g. The app closed before I could clock out."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn ghost" id="corrCancel">Cancel</button>
+          <button type="submit" class="btn primary">Submit Request</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
