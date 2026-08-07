@@ -657,11 +657,8 @@
       else if (r.status === "leave") leave++;
       else absent++;
     });
-    var rate = dailyRate(currentUser.salary, month);
-    var earned = (present + leave) * rate;
     var day = workingDaysInMonth(month, settings.work_days_per_week);
     el.innerHTML =
-      '<div class="report-card highlight"><div class="label">Salary This Month</div><div class="value">' + money(earned) + "</div></div>" +
       '<div class="report-card"><div class="label">Days Present</div><div class="value">' + present + "</div></div>" +
       '<div class="report-card"><div class="label">Paid Leave</div><div class="value">' + leave + "</div></div>" +
       '<div class="report-card"><div class="label">Absent</div><div class="value">' + absent + "</div></div>" +
