@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS attendance (
   clock_out  TEXT,                        -- local 'HH:MM' or NULL
   status     TEXT    NOT NULL DEFAULT 'present', -- 'present' | 'leave' | 'absent'
   note       TEXT,
+  task       TEXT    NOT NULL DEFAULT '', -- employee's note of the day's work
   created_at TEXT    NOT NULL,
   UNIQUE (user_id, work_date)
 );

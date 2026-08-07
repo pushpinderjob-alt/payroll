@@ -222,7 +222,16 @@ async function handleClockIn(request, env, user) {
   const existing = await env.DB.prepare(
     'SELECT * FROM attendance WHERE user_id = ? AND work_date = ?'
   ).bind(user.id, date).first();
-  if (existing) throw new HttpError(409, existing.clock_in ? 'Already clocked in for this date' : 'A record already exists for this date');
+  if (existing) {
+    if (existing.clock_in) throw new HttpError(409, 'Already clocked in for this date');
+    // A record created by saving today's task (no times, status absent) can be
+    // promoted to a real clock-in.
+    if (existing.status === 'absent' && existing.task) {
+      await env.DB.prepare("UPDATE attendance SET clock_in = ?, status = 'present' WHERE id = ?").bind(time, existing.id).run();
+      return respond({ ok: true, id: existing.id, work_date: date, clock_in: time }, 200, request);
+    }
+    throw new HttpError(409, 'A record already exists for this date');
+  }
 
   const now = new Date().toISOString();
   const r = await env.DB.prepare(
@@ -253,7 +262,7 @@ async function handleMyStatus(request, env, user, url) {
   const date = url.searchParams.get('date');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new HttpError(400, 'Valid date (YYYY-MM-DD) required');
   const rec = await env.DB.prepare(
-    'SELECT id, work_date, clock_in, clock_out, status, note FROM attendance WHERE user_id = ? AND work_date = ?'
+    'SELECT id, work_date, clock_in, clock_out, status, note, task FROM attendance WHERE user_id = ? AND work_date = ?'
   ).bind(user.id, date).first();
   return respond({ date: date, record: rec || null }, 200, request);
 }
@@ -261,9 +270,37 @@ async function handleMyStatus(request, env, user, url) {
 async function handleMyAttendance(request, env, user, url) {
   const month = url.searchParams.get('month') || new Date().toISOString().slice(0, 7);
   const rows = await env.DB.prepare(
-    "SELECT id, work_date, clock_in, clock_out, status, note FROM attendance WHERE user_id = ? AND work_date LIKE ? ORDER BY work_date"
+    "SELECT id, work_date, clock_in, clock_out, status, note, task FROM attendance WHERE user_id = ? AND work_date LIKE ? ORDER BY work_date"
   ).bind(user.id, month + '%').all();
   return respond({ month: month, records: rows.results }, 200, request);
+}
+
+/* Employee: today's task */
+
+async function handleSaveTask(request, env, user) {
+  const body = await request.json().catch(() => ({}));
+  const date = String(body.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, 'Valid date (YYYY-MM-DD) required');
+  const task = body.task !== undefined ? String(body.task).trim().slice(0, 1000) : '';
+
+  const existing = await env.DB.prepare(
+    'SELECT id FROM attendance WHERE user_id = ? AND work_date = ?'
+  ).bind(user.id, date).first();
+
+  let id;
+  if (existing) {
+    await env.DB.prepare('UPDATE attendance SET task = ? WHERE id = ?').bind(task, existing.id).run();
+    id = existing.id;
+  } else {
+    // Placeholder record so the task is stored; stays 'absent' until the employee clocks in.
+    const r = await env.DB.prepare(
+      "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, task, created_at) VALUES (?,?,NULL,NULL,'absent',NULL,?,?)"
+    ).bind(user.id, date, task, new Date().toISOString()).run();
+    id = r.meta.last_row_id;
+  }
+
+  const rec = await env.DB.prepare('SELECT * FROM attendance WHERE id = ?').bind(id).first();
+  return respond({ record: rec }, 200, request);
 }
 
 /* Employee: clock correction requests */
@@ -437,11 +474,11 @@ async function handleListAttendance(request, env, url) {
   let rows;
   if (date) {
     rows = await env.DB.prepare(
-      "SELECT a.id, a.user_id, a.work_date, a.clock_in, a.clock_out, a.status, a.note, u.name AS user_name, u.email AS user_email FROM attendance a JOIN users u ON u.id = a.user_id WHERE a.work_date = ? ORDER BY u.name"
+      "SELECT a.id, a.user_id, a.work_date, a.clock_in, a.clock_out, a.status, a.note, a.task, u.name AS user_name, u.email AS user_email FROM attendance a JOIN users u ON u.id = a.user_id WHERE a.work_date = ? ORDER BY u.name"
     ).bind(date).all();
   } else if (month) {
     rows = await env.DB.prepare(
-      "SELECT a.id, a.user_id, a.work_date, a.clock_in, a.clock_out, a.status, a.note, u.name AS user_name, u.email AS user_email FROM attendance a JOIN users u ON u.id = a.user_id WHERE a.work_date LIKE ? ORDER BY a.work_date, u.name"
+      "SELECT a.id, a.user_id, a.work_date, a.clock_in, a.clock_out, a.status, a.note, a.task, u.name AS user_name, u.email AS user_email FROM attendance a JOIN users u ON u.id = a.user_id WHERE a.work_date LIKE ? ORDER BY a.work_date, u.name"
     ).bind(month + '%').all();
   } else {
     throw new HttpError(400, 'Provide ?date=YYYY-MM-DD or ?month=YYYY-MM');
@@ -463,6 +500,7 @@ async function handleUpsertAttendance(request, env) {
   const clockIn = body.clock_in ? String(body.clock_in) : null;
   const clockOut = body.clock_out ? String(body.clock_out) : null;
   const note = body.note ? String(body.note).slice(0, 500) : null;
+  const task = body.task !== undefined ? String(body.task).slice(0, 1000) : null;
 
   const existing = await env.DB.prepare(
     'SELECT id FROM attendance WHERE user_id = ? AND work_date = ?'
@@ -471,13 +509,13 @@ async function handleUpsertAttendance(request, env) {
   let id;
   if (existing) {
     await env.DB.prepare(
-      'UPDATE attendance SET status = ?, clock_in = ?, clock_out = ?, note = ? WHERE id = ?'
-    ).bind(status, clockIn, clockOut, note, existing.id).run();
+      'UPDATE attendance SET status = ?, clock_in = ?, clock_out = ?, note = ?, task = COALESCE(?, task) WHERE id = ?'
+    ).bind(status, clockIn, clockOut, note, task, existing.id).run();
     id = existing.id;
   } else {
     const r = await env.DB.prepare(
-      "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, created_at) VALUES (?,?,?,?,?,?,?)"
-    ).bind(userId, date, clockIn, clockOut, status, note, new Date().toISOString()).run();
+      "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, task, created_at) VALUES (?,?,?,?,?,?,COALESCE(?,''),?)"
+    ).bind(userId, date, clockIn, clockOut, status, note, task, new Date().toISOString()).run();
     id = r.meta.last_row_id;
   }
 
@@ -551,6 +589,10 @@ async function route(request, env, url) {
   if (path === '/api/me/attendance' && method === 'GET') {
     const user = await requireUser(request, env);
     return handleMyAttendance(request, env, user, url);
+  }
+  if (path === '/api/me/task' && method === 'PUT') {
+    const user = await requireUser(request, env);
+    return handleSaveTask(request, env, user);
   }
   if (path === '/api/clock/in' && method === 'POST') {
     const user = await requireUser(request, env);
