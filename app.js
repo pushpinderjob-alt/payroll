@@ -1212,7 +1212,9 @@
     $("#requestCorrectionBtn").addEventListener("click", openCorrectionModal);
     $("#corrCancel").addEventListener("click", closeCorrectionModal);
     $("#corrDateAdd").addEventListener("click", addCorrDate);
-    $("#corrDate").addEventListener("change", addCorrDate);
+    $("#corrDate").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); addCorrDate(); }
+    });
     $("#corrModal").addEventListener("click", function (e) {
       if (e.target === this) closeCorrectionModal();
     });
