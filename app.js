@@ -1186,11 +1186,12 @@
     var input = $("#corrDate");
     var d = input.value;
     if (!d) { toast("Pick a date first", true); return; }
-    if (corrDates.indexOf(d) !== -1) { toast("Date already added", true); return; }
+    if (corrDates.indexOf(d) !== -1) { toast("Date already added: " + d, true); return; }
     if (corrDates.length >= 31) { toast("Maximum 31 dates", true); return; }
     corrDates.push(d);
     renderCorrChips();
     input.value = "";
+    toast("Added " + d);
   }
 
   function openCorrectionModal() {
