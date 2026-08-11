@@ -7,10 +7,10 @@ compatibility_date = "2025-09-01"
 # (do not commit a real secret here)
 
 # Optional: enable "Sign in with Google".
-#   [vars]
-#   GOOGLE_CLIENT_ID = "xxxx.apps.googleusercontent.com"
-#   GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET
+[vars]
+GOOGLE_CLIENT_ID = "678365536626-2ago6n13j2a71e36jp0gi33gj2jfr30f.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
 
 [[d1_databases]]
 binding = "DB"
