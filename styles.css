@@ -244,6 +244,22 @@ tbody tr:hover { background: #f8fafc; }
   border-radius: 8px; padding: 10px 12px; font-size: 13.5px; font-weight: 600;
 }
 
+/* ---------- Google login ---------- */
+.google-wrap { margin-bottom: 18px; }
+.google-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 11px; background: #fff; color: #1f2937;
+  border: 1px solid #d1d5db; border-radius: 8px;
+  font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s;
+}
+.google-btn:hover { background: #f8fafc; border-color: #9ca3af; }
+.google-icon { width: 18px; height: 18px; }
+.divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted); font-size: 12px; margin: 16px 0 4px;
+}
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
 .btn.full { width: 100%; margin-top: 6px; padding: 11px; }
 .btn.ghost-light { background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25); }
 .btn.ghost-light:hover { background: rgba(255,255,255,0.22); }
