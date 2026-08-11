@@ -75,7 +75,7 @@ Employees can sign in with Google instead of a password. Google sign-in only wor
 2. **APIs & Services → OAuth consent screen** → set it up as an **External** app with the app name/domain. Add the test users if you keep the app in "Testing" mode.
 3. **APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application**:
    - **Authorized JavaScript origins:** `https://payroll.tksrproductservices.com`
-   - **Authorized redirect URIs:** `https://payroll.tksrproductservices.com/google-callback.html`
+   - **Authorized redirect URIs:** `https://tksr-payroll-api.pushpinderjob.workers.dev/api/auth/google/callback`
 4. Copy the **Client ID** (public, safe to share) and the **Client secret**.
 5. Configure the Worker:
 
@@ -89,10 +89,12 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET    # paste the client secret
 ```toml
 [vars]
 GOOGLE_CLIENT_ID = "xxxx.apps.googleusercontent.com"
-GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
+GOOGLE_REDIRECT_URI = "https://tksr-payroll-api.pushpinderjob.workers.dev/api/auth/google/callback"
 ```
 
 6. Redeploy: `npx wrangler deploy`. The **Continue with Google** button now appears on the sign-in screen.
+
+> How it works: the browser redirects to Google, Google sends the code to the Worker's `/api/auth/google/callback` (on workers.dev, which always has a valid HTTPS certificate). The Worker exchanges it with the client secret, checks the email against the users table, and bounces back to the app with a JWT in the URL fragment. This avoids depending on a TLS certificate for the Pages custom domain.
 
 ## API summary
 
