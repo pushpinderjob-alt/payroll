@@ -6,6 +6,12 @@ compatibility_date = "2025-09-01"
 #   npx wrangler secret put JWT_SECRET
 # (do not commit a real secret here)
 
+# Optional: enable "Sign in with Google".
+#   [vars]
+#   GOOGLE_CLIENT_ID = "xxxx.apps.googleusercontent.com"
+#   GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+
 [[d1_databases]]
 binding = "DB"
 database_name = "tksr-payroll"

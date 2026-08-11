@@ -91,6 +91,16 @@
     div.textContent = s == null ? "" : s;
     return div.innerHTML;
   }
+  function b64url(bytes) {
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function randomB64url(len) {
+    var bytes = new Uint8Array(len);
+    crypto.getRandomValues(bytes);
+    return b64url(bytes);
+  }
   function toast(msg, isError) {
     var t = $("#toast");
     t.textContent = msg;
@@ -707,6 +717,52 @@
   }
 
   /* =========================================================
+     GOOGLE LOGIN
+     ========================================================= */
+  var googleEnabled = false;
+
+  function toggleGoogleWrap(loginTab) {
+    var wrap = $("#googleLoginWrap");
+    if (!wrap) return;
+    wrap.classList.toggle("hidden", !(loginTab && googleEnabled));
+  }
+
+  function initGoogleLogin() {
+    var wrap = $("#googleLoginWrap");
+    if (!wrap) return;
+    api("/api/auth/google/config").then(function (cfg) {
+      googleEnabled = !!cfg.enabled;
+      toggleGoogleWrap($(".auth-tab.active") && $(".auth-tab.active").dataset.mode === "login");
+      if (googleEnabled) {
+        $("#googleLoginBtn").addEventListener("click", function () { startGoogleLogin(cfg); });
+      }
+    }).catch(function () { googleEnabled = false; });
+  }
+
+  async function startGoogleLogin(cfg) {
+    var verifier = randomB64url(48);
+    var digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    var challenge = b64url(new Uint8Array(digest));
+    var state = randomB64url(24);
+    sessionStorage.setItem("gstate", JSON.stringify({
+      state: state,
+      verifier: verifier,
+      redirect_uri: cfg.redirect_uri
+    }));
+    var q = new URLSearchParams({
+      client_id: cfg.client_id,
+      redirect_uri: cfg.redirect_uri,
+      response_type: "code",
+      scope: "openid email profile",
+      state: state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      prompt: "select_account"
+    });
+    location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + q.toString();
+  }
+
+  /* =========================================================
      WIRING
      ========================================================= */
   function wireAuth() {
@@ -715,6 +771,7 @@
         $all(".auth-tab").forEach(function (x) { x.classList.toggle("active", x === b); });
         $("#loginForm").classList.toggle("hidden", b.dataset.mode !== "login");
         $("#signupForm").classList.toggle("hidden", b.dataset.mode !== "signup");
+        toggleGoogleWrap(b.dataset.mode === "login");
         hideAuthError();
       });
     });
@@ -1089,6 +1146,7 @@
     wireEmployee();
     wireTask();
     wireCorrections();
+    initGoogleLogin();
     restoreSession();
   });
 })();

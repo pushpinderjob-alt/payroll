@@ -6,7 +6,7 @@ Attendance + payroll app for a small business. Employees log in, clock in/out, a
 
 - **Frontend** (static) — hosted on **GitHub Pages** at `payroll.tksrproductservices.com`
 - **Backend** — **Cloudflare Worker** (API) + **Cloudflare D1** (SQLite database)
-- **Auth** — email + password. JWT sessions. Password hashing via PBKDF2 (Web Crypto).
+- **Auth** — email + password (PBKDF2) and optional **Sign in with Google** (OAuth 2.0 + PKCE). JWT sessions. Password hashing via PBKDF2 (Web Crypto).
 - **Roles**
   - **Admin** — first account created is the admin. Manages employees, marks leave/absence, corrects clock times, approves clock-correction requests, views monthly reports, exports CSV, configures settings.
   - **Employee** — logs in with an admin-created account, clocks in/out, sees own attendance, and requests clock corrections.
@@ -67,12 +67,41 @@ Commit and push to `main` — GitHub Actions redeploys automatically.
 4. Employees sign in and use **Clock In / Clock Out**; they can also request a **clock correction** (missed/mistyped time) from their dashboard.
 5. Admin uses **Attendance** (mark leave/absence, correct times), **Requests** (approve/reject employee clock corrections), and **Reports** (monthly summary + CSV).
 
+## 5. Enable Google login (optional)
+
+Employees can sign in with Google instead of a password. Google sign-in only works for emails that already have an account in the system (same email as the one used to log in before). No new accounts are auto-created.
+
+1. Go to <https://console.cloud.google.com> and create a project (or pick an existing one).
+2. **APIs & Services → OAuth consent screen** → set it up as an **External** app with the app name/domain. Add the test users if you keep the app in "Testing" mode.
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application**:
+   - **Authorized JavaScript origins:** `https://payroll.tksrproductservices.com`
+   - **Authorized redirect URIs:** `https://payroll.tksrproductservices.com/google-callback.html`
+4. Copy the **Client ID** (public, safe to share) and the **Client secret**.
+5. Configure the Worker:
+
+```powershell
+cd worker
+npx wrangler secret put GOOGLE_CLIENT_SECRET    # paste the client secret
+```
+
+   Add the public client ID and redirect URI to `worker/wrangler.toml`:
+
+```toml
+[vars]
+GOOGLE_CLIENT_ID = "xxxx.apps.googleusercontent.com"
+GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
+```
+
+6. Redeploy: `npx wrangler deploy`. The **Continue with Google** button now appears on the sign-in screen.
+
 ## API summary
 
 | Method | Path | Access | Purpose |
 |--------|------|--------|---------|
 | POST | `/api/auth/signup` | public (first user) / admin | Create admin (bootstrap) or employee |
 | POST | `/api/auth/login` | public | Login -> JWT + user |
+| GET | `/api/auth/google/config` | public | Google OAuth config (client id, redirect uri) or `enabled:false` |
+| POST | `/api/auth/google/token` | public | Exchange Google OAuth code -> JWT + user |
 | GET | `/api/me` | any | Current user |
 | GET | `/api/me/status?date=` | employee | Today's record |
 | GET | `/api/me/attendance?month=` | employee | Own month records |

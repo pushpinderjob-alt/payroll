@@ -202,6 +202,76 @@ async function handleMe(request, env, user) {
   return respond({ user: user }, 200, request);
 }
 
+/* Google OAuth (Sign in with Google) */
+
+const GOOGLE_DEFAULT_REDIRECT = 'https://payroll.tksrproductservices.com/google-callback.html';
+
+async function handleGoogleConfig(request, env) {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  if (!clientId) return respond({ enabled: false }, 200, request);
+  return respond({
+    enabled: true,
+    client_id: clientId,
+    redirect_uri: env.GOOGLE_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT
+  }, 200, request);
+}
+
+async function handleGoogleToken(request, env) {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new HttpError(503, 'Google login is not configured');
+
+  const body = await request.json().catch(() => ({}));
+  const code = String(body.code || '');
+  const redirectUri = String(body.redirect_uri || env.GOOGLE_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT);
+  const verifier = body.code_verifier ? String(body.code_verifier) : '';
+  if (!code) throw new HttpError(400, 'Missing authorization code');
+
+  const params = new URLSearchParams();
+  params.set('code', code);
+  params.set('client_id', clientId);
+  params.set('client_secret', clientSecret);
+  params.set('redirect_uri', redirectUri);
+  params.set('grant_type', 'authorization_code');
+  if (verifier) params.set('code_verifier', verifier);
+
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  });
+  const tokData = await tokRes.json().catch(() => ({}));
+  if (!tokData.id_token) {
+    throw new HttpError(401, 'Google did not return a valid token: ' + (tokData.error_description || tokData.error || 'unknown error'));
+  }
+
+  const infoRes = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(tokData.id_token));
+  const info = await infoRes.json().catch(() => ({}));
+  if (info.aud !== clientId) throw new HttpError(401, 'Token audience mismatch');
+  if (!['accounts.google.com', 'https://accounts.google.com'].includes(info.iss)) throw new HttpError(401, 'Token issuer mismatch');
+  if (!info.exp || info.exp * 1000 < Date.now()) throw new HttpError(401, 'Token expired');
+  if (info.email_verified === false || info.email_verified === 'false') throw new HttpError(401, 'Google email is not verified');
+
+  const email = String(info.email || '').trim().toLowerCase();
+  if (!email) throw new HttpError(401, 'Google account has no email');
+
+  const user = await getUserByEmail(env, email);
+  if (!user) throw new HttpError(403, 'No account found for ' + email + '. Ask an admin to create your account.');
+  if (!user.active) throw new HttpError(403, 'Account deactivated');
+
+  const token = await signJwt({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30
+  }, env.JWT_SECRET);
+
+  return respond({
+    token: token,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, salary: user.salary, active: user.active }
+  }, 200, request);
+}
+
 function localTimeHM() {
   // Worker runs in UTC; the client sends its local time instead. Fallback is UTC time.
   const d = new Date();
@@ -576,6 +646,8 @@ async function route(request, env, url) {
   // auth
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
+  if (path === '/api/auth/google/config' && method === 'GET') return handleGoogleConfig(request, env);
+  if (path === '/api/auth/google/token' && method === 'POST') return handleGoogleToken(request, env);
 
   // authenticated
   if (path === '/api/me' && method === 'GET') {
