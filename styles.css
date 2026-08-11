@@ -209,7 +209,7 @@ tbody tr:hover { background: #f8fafc; }
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: #0f172a; color: #fff; padding: 12px 22px; border-radius: 10px;
   font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-  z-index: 100; animation: fadeIn 0.2s ease;
+  z-index: 300; animation: fadeIn 0.2s ease;
 }
 .toast.error { background: var(--red); }
 .hidden { display: none !important; }
