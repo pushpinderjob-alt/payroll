@@ -416,10 +416,14 @@ function validCorrectionReason(r) {
   return ['forgot_clock_out', 'clocked_out_early', 'forgot_clock_in', 'wrong_time', 'other'].indexOf(r) >= 0;
 }
 
+function randomGroupId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(9))).map(function (b) {
+    return b.toString(16).padStart(2, '0');
+  }).join('');
+}
+
 async function handleCreateCorrection(request, env, user) {
   const body = await request.json().catch(() => ({}));
-  const workDate = String(body.work_date || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new HttpError(400, 'Valid date (YYYY-MM-DD) required');
   const reason = String(body.reason || '').trim();
   if (!validCorrectionReason(reason)) throw new HttpError(400, 'Valid reason required');
   const note = body.note ? String(body.note).trim() : '';
@@ -429,22 +433,35 @@ async function handleCreateCorrection(request, env, user) {
   if (!reqIn && !reqOut && !note) throw new HttpError(400, 'Provide the correct clock time(s) or a note');
   if (reason === 'other' && !note) throw new HttpError(400, 'Please describe the issue in the note');
 
-  const dup = await env.DB.prepare(
-    "SELECT id FROM corrections WHERE user_id = ? AND work_date = ? AND status = 'pending'"
-  ).bind(user.id, workDate).first();
-  if (dup) throw new HttpError(409, 'You already have a pending request for this date');
+  let dates = Array.isArray(body.work_dates) ? body.work_dates : (body.work_date ? [body.work_date] : []);
+  dates = dates.map(function (d) { return String(d).trim(); })
+    .filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); });
+  dates = Array.from(new Set(dates)).sort();
+  if (dates.length === 0) throw new HttpError(400, 'Select at least one valid date (YYYY-MM-DD)');
+  if (dates.length > 31) throw new HttpError(400, 'You can request up to 31 dates at once');
 
-  const cur = await env.DB.prepare(
-    'SELECT clock_in, clock_out FROM attendance WHERE user_id = ? AND work_date = ?'
-  ).bind(user.id, workDate).first();
+  for (const d of dates) {
+    const dup = await env.DB.prepare(
+      "SELECT id FROM corrections WHERE user_id = ? AND work_date = ? AND status = 'pending'"
+    ).bind(user.id, d).first();
+    if (dup) throw new HttpError(409, 'You already have a pending request for ' + d);
+  }
 
+  const group = randomGroupId();
   const now = new Date().toISOString();
-  const r = await env.DB.prepare(
-    "INSERT INTO corrections (user_id, work_date, reason, note, current_clock_in, current_clock_out, requested_clock_in, requested_clock_out, status, admin_note, created_at, decided_at, decided_by) VALUES (?,?,?,?,?,?,?,?,'pending',NULL,?,NULL,NULL)"
-  ).bind(user.id, workDate, reason, note, cur ? cur.clock_in : null, cur ? cur.clock_out : null, reqIn, reqOut, now).run();
+  const rows = [];
+  for (const d of dates) {
+    const cur = await env.DB.prepare(
+      'SELECT clock_in, clock_out FROM attendance WHERE user_id = ? AND work_date = ?'
+    ).bind(user.id, d).first();
+    const r = await env.DB.prepare(
+      "INSERT INTO corrections (user_id, work_date, reason, note, current_clock_in, current_clock_out, requested_clock_in, requested_clock_out, status, admin_note, request_group, created_at, decided_at, decided_by) VALUES (?,?,?,?,?,?,?,?,'pending',NULL,?,?,NULL,NULL)"
+    ).bind(user.id, d, reason, note, cur ? cur.clock_in : null, cur ? cur.clock_out : null, reqIn, reqOut, group, now).run();
+    const row = await env.DB.prepare('SELECT * FROM corrections WHERE id = ?').bind(r.meta.last_row_id).first();
+    rows.push(row);
+  }
 
-  const row = await env.DB.prepare('SELECT * FROM corrections WHERE id = ?').bind(r.meta.last_row_id).first();
-  return respond({ correction: row }, 201, request);
+  return respond({ corrections: rows, request_group: group }, 201, request);
 }
 
 async function handleMyCorrections(request, env, user) {
@@ -471,6 +488,22 @@ async function handleListCorrections(request, env, url) {
   return respond({ corrections: rows.results }, 200, request);
 }
 
+async function applyCorrectionToAttendance(env, corr, note, now) {
+  const existing = await env.DB.prepare(
+    'SELECT * FROM attendance WHERE user_id = ? AND work_date = ?'
+  ).bind(corr.user_id, corr.work_date).first();
+  if (existing) {
+    const newIn = corr.requested_clock_in != null ? corr.requested_clock_in : existing.clock_in;
+    const newOut = corr.requested_clock_out != null ? corr.requested_clock_out : existing.clock_out;
+    await env.DB.prepare('UPDATE attendance SET clock_in = ?, clock_out = ? WHERE id = ?')
+      .bind(newIn, newOut, existing.id).run();
+  } else {
+    await env.DB.prepare(
+      "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, task, created_at) VALUES (?,?,?,?,'present',?,?,?)"
+    ).bind(corr.user_id, corr.work_date, corr.requested_clock_in, corr.requested_clock_out, note || 'Corrected via request', '', now).run();
+  }
+}
+
 async function handleDecideCorrection(request, env, url, admin, approve) {
   const parts = url.pathname.split('/');
   const id = parts[parts.length - 2];
@@ -483,22 +516,7 @@ async function handleDecideCorrection(request, env, url, admin, approve) {
   if (corr.status !== 'pending') throw new HttpError(400, 'This request has already been decided');
 
   const now = new Date().toISOString();
-
-  if (approve) {
-    const existing = await env.DB.prepare(
-      'SELECT * FROM attendance WHERE user_id = ? AND work_date = ?'
-    ).bind(corr.user_id, corr.work_date).first();
-    if (existing) {
-      const newIn = corr.requested_clock_in != null ? corr.requested_clock_in : existing.clock_in;
-      const newOut = corr.requested_clock_out != null ? corr.requested_clock_out : existing.clock_out;
-      await env.DB.prepare('UPDATE attendance SET clock_in = ?, clock_out = ? WHERE id = ?')
-        .bind(newIn, newOut, existing.id).run();
-    } else {
-      await env.DB.prepare(
-        "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, created_at) VALUES (?,?,?,?,'present',?,?)"
-      ).bind(corr.user_id, corr.work_date, corr.requested_clock_in, corr.requested_clock_out, adminNote || 'Corrected via request', now).run();
-    }
-  }
+  if (approve) await applyCorrectionToAttendance(env, corr, adminNote, now);
 
   await env.DB.prepare(
     'UPDATE corrections SET status = ?, admin_note = ?, decided_at = ?, decided_by = ? WHERE id = ?'
@@ -508,12 +526,44 @@ async function handleDecideCorrection(request, env, url, admin, approve) {
   return respond({ correction: updated }, 200, request);
 }
 
+async function handleDecideCorrectionGroup(request, env, url, admin, approve) {
+  const parts = url.pathname.split('/');
+  const group = decodeURIComponent(parts[parts.length - 2]);
+  if (!/^[a-f0-9]{18}$/.test(group)) throw new HttpError(400, 'Invalid request group');
+  const body = await request.json().catch(() => ({}));
+  const adminNote = body.admin_note ? String(body.admin_note).trim() : '';
+
+  const rows = await env.DB.prepare(
+    "SELECT * FROM corrections WHERE request_group = ? AND status = 'pending'"
+  ).bind(group).all();
+  if (rows.results.length === 0) throw new HttpError(404, 'No pending requests in this group');
+
+  const now = new Date().toISOString();
+  for (const corr of rows.results) {
+    if (approve) await applyCorrectionToAttendance(env, corr, adminNote, now);
+    await env.DB.prepare(
+      'UPDATE corrections SET status = ?, admin_note = ?, decided_at = ?, decided_by = ? WHERE id = ?'
+    ).bind(approve ? 'approved' : 'rejected', adminNote || null, now, admin.id, corr.id).run();
+  }
+
+  const updated = await env.DB.prepare('SELECT * FROM corrections WHERE request_group = ?').bind(group).all();
+  return respond({ corrections: updated.results }, 200, request);
+}
+
 async function handleApproveCorrection(request, env, url, admin) {
   return handleDecideCorrection(request, env, url, admin, true);
 }
 
 async function handleRejectCorrection(request, env, url, admin) {
   return handleDecideCorrection(request, env, url, admin, false);
+}
+
+async function handleApproveCorrectionGroup(request, env, url, admin) {
+  return handleDecideCorrectionGroup(request, env, url, admin, true);
+}
+
+async function handleRejectCorrectionGroup(request, env, url, admin) {
+  return handleDecideCorrectionGroup(request, env, url, admin, false);
 }
 
 /* Admin: users */
@@ -743,6 +793,8 @@ async function route(request, env, url) {
   if (path === '/api/corrections' && method === 'GET') return adminOnly(handleListCorrections);
   if (/^\/api\/corrections\/\d+\/approve$/.test(path) && method === 'POST') return adminOnly(handleApproveCorrection);
   if (/^\/api\/corrections\/\d+\/reject$/.test(path) && method === 'POST') return adminOnly(handleRejectCorrection);
+  if (/^\/api\/corrections\/group\/[a-f0-9]{18}\/approve$/.test(path) && method === 'POST') return adminOnly(handleApproveCorrectionGroup);
+  if (/^\/api\/corrections\/group\/[a-f0-9]{18}\/reject$/.test(path) && method === 'POST') return adminOnly(handleRejectCorrectionGroup);
 
   if (path === '/api' || path === '/') {
     return respond({ ok: true, service: 'tksr-payroll-api' }, 200, request);

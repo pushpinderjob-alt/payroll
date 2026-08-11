@@ -296,11 +296,15 @@
     <div class="modal-box">
       <h3>Request Clock Correction</h3>
       <form id="corrForm" novalidate>
-        <div class="form-grid">
-          <div class="field">
-            <label for="corrDate">Date</label>
-            <input type="date" id="corrDate" required>
+        <div class="field">
+          <label>Dates (add one or more)</label>
+          <div class="date-picker">
+            <input type="date" id="corrDate">
+            <button type="button" class="btn ghost" id="corrDateAdd">Add</button>
           </div>
+          <div id="corrDateChips" class="date-chips"></div>
+        </div>
+        <div class="form-grid">
           <div class="field">
             <label for="corrReason">Reason</label>
             <select id="corrReason">
@@ -322,6 +326,7 @@
             <input type="time" id="corrOut">
           </div>
         </div>
+        <p class="muted">The requested times below apply to every date you selected.</p>
         <div class="field">
           <label for="corrNote">Note</label>
           <textarea id="corrNote" rows="3" placeholder="e.g. The app closed before I could clock out."></textarea>

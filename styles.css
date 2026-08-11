@@ -323,6 +323,31 @@ tbody tr:hover { background: #f8fafc; }
 .req-main .meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .meta-note { font-size: 12.5px; color: var(--amber); margin-top: 2px; font-style: italic; }
 .req-actions { display: flex; gap: 6px; }
+.req-group { border-bottom: 1px solid var(--border); }
+.req-group:last-child { border-bottom: none; }
+.req-group-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 18px; background: #f8fafc; border-bottom: 1px solid var(--border);
+}
+.req-group-head .name { flex: 1; }
+.req-group .req-row { border-bottom: 1px dashed var(--border); }
+.req-group .req-row:last-child { border-bottom: none; }
+
+/* ---------- Date picker / chips ---------- */
+.date-picker { display: flex; gap: 8px; }
+.date-picker input { flex: 1; }
+.date-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.date-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe;
+  border-radius: 999px; padding: 3px 8px 3px 11px; font-size: 12.5px; font-weight: 600;
+}
+.chip-x {
+  border: none; background: #c7d2fe; color: #3730a3;
+  width: 16px; height: 16px; border-radius: 50%; cursor: pointer;
+  font-size: 12px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+}
+.chip-x:hover { background: #a5b4fc; }
 
 /* ---------- Modal ---------- */
 .modal {
