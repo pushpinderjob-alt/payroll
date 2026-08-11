@@ -999,7 +999,7 @@
         el.innerHTML = '<div class="empty-state"><p>No correction requests.</p></div>';
       } else {
         el.innerHTML = "";
-        list.forEach(function (c) { el.appendChild(adminReqRow(c)); });
+        appendCorrectionGroups(el, list);
       }
       refreshReqBadge();
     }).catch(function (e) {
@@ -1007,7 +1007,59 @@
     });
   }
 
-  function adminReqRow(c) {
+  function groupKey(c) { return c.request_group || ("single-" + c.id); }
+
+  function appendCorrectionGroups(el, list) {
+    var groups = {};
+    list.forEach(function (c) {
+      var k = groupKey(c);
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(c);
+    });
+    var pendingIn = function (rows) { return rows.some(function (r) { return r.status === "pending"; }); };
+    var key = Object.keys(groups).sort(function (a, b) {
+      var pa = pendingIn(groups[a]) ? 0 : 1;
+      var pb = pendingIn(groups[b]) ? 0 : 1;
+      return pa - pb;
+    });
+    key.forEach(function (k) {
+      var rows = groups[k];
+      var wrap = document.createElement("div");
+      wrap.className = "req-group";
+      if (k.indexOf("single-") === 0) {
+        el.appendChild(adminReqRow(rows[0]));
+        return;
+      }
+      var head = document.createElement("div");
+      head.className = "req-group-head";
+      var headName = document.createElement("span");
+      headName.className = "name";
+      headName.textContent = rows[0].user_name + " \u2014 " + rows.length + " date(s)";
+      head.appendChild(headName);
+      if (pendingIn(rows)) {
+        var ok = document.createElement("button");
+        ok.className = "btn primary";
+        ok.textContent = "Approve All";
+        ok.addEventListener("click", function () { decideCorrectionGroup(k, true); });
+        var no = document.createElement("button");
+        no.className = "btn ghost";
+        no.textContent = "Reject All";
+        no.addEventListener("click", function () { decideCorrectionGroup(k, false); });
+        head.appendChild(ok);
+        head.appendChild(no);
+      } else {
+        var badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = rows[0].status === "approved" ? "Approved" : "Rejected";
+        head.appendChild(badge);
+      }
+      wrap.appendChild(head);
+      rows.forEach(function (c) { wrap.appendChild(adminReqRow(c, true)); });
+      el.appendChild(wrap);
+    });
+  }
+
+  function adminReqRow(c, inGroup) {
     var div = document.createElement("div");
     div.className = "req-row" + (c.status === "pending" ? " pending" : "");
     var main = document.createElement("div");
@@ -1035,7 +1087,7 @@
     div.appendChild(main);
     div.appendChild(corrBadgeEl(c.status));
 
-    if (c.status === "pending") {
+    if (c.status === "pending" && !inGroup) {
       var actions = document.createElement("div");
       actions.className = "req-actions";
       var ok = document.createElement("button");
@@ -1072,6 +1124,25 @@
     }
   }
 
+  async function decideCorrectionGroup(group, approve) {
+    var note = "";
+    if (approve) {
+      if (!confirm("Approve all dates in this request? Attendance for each will be updated.")) return;
+    } else {
+      note = prompt("Optional note to the employee:", "") || "";
+    }
+    try {
+      await api("/api/corrections/group/" + encodeURIComponent(group) + (approve ? "/approve" : "/reject"), {
+        method: "POST",
+        body: { admin_note: note }
+      });
+      toast(approve ? "Request approved" : "Request rejected");
+      renderCorrections();
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
   async function refreshReqBadge() {
     if (!currentUser || currentUser.role !== "admin") return;
     try {
@@ -1085,7 +1156,46 @@
     } catch (e) { /* non-fatal */ }
   }
 
+  var corrDates = [];
+
+  function renderCorrChips() {
+    var wrap = $("#corrDateChips");
+    wrap.innerHTML = "";
+    corrDates.forEach(function (d) {
+      var chip = document.createElement("span");
+      chip.className = "date-chip";
+      var label = document.createElement("span");
+      label.textContent = d;
+      chip.appendChild(label);
+      var x = document.createElement("button");
+      x.type = "button";
+      x.className = "chip-x";
+      x.setAttribute("aria-label", "Remove " + d);
+      x.textContent = "\u00D7";
+      x.addEventListener("click", function () {
+        corrDates = corrDates.filter(function (y) { return y !== d; });
+        renderCorrChips();
+      });
+      chip.appendChild(x);
+      wrap.appendChild(chip);
+    });
+    wrap.classList.toggle("hidden", corrDates.length === 0);
+  }
+
+  function addCorrDate() {
+    var input = $("#corrDate");
+    var d = input.value;
+    if (!d) { toast("Pick a date first", true); return; }
+    if (corrDates.indexOf(d) !== -1) { toast("Date already added", true); return; }
+    if (corrDates.length >= 31) { toast("Maximum 31 dates", true); return; }
+    corrDates.push(d);
+    renderCorrChips();
+    input.value = "";
+  }
+
   function openCorrectionModal() {
+    corrDates = [];
+    renderCorrChips();
     $("#corrDate").value = todayStr();
     $("#corrReason").value = "forgot_clock_out";
     $("#corrIn").value = "";
@@ -1101,26 +1211,31 @@
   function wireCorrections() {
     $("#requestCorrectionBtn").addEventListener("click", openCorrectionModal);
     $("#corrCancel").addEventListener("click", closeCorrectionModal);
+    $("#corrDateAdd").addEventListener("click", addCorrDate);
+    $("#corrDate").addEventListener("change", addCorrDate);
     $("#corrModal").addEventListener("click", function (e) {
       if (e.target === this) closeCorrectionModal();
     });
     $("#corrForm").addEventListener("submit", async function (e) {
       e.preventDefault();
-      var body = {
-        work_date: $("#corrDate").value,
-        reason: $("#corrReason").value,
-        requested_clock_in: $("#corrIn").value || null,
-        requested_clock_out: $("#corrOut").value || null,
-        note: $("#corrNote").value.trim()
-      };
-      if (!body.work_date) { toast("Select a date", true); return; }
-      if (!body.requested_clock_in && !body.requested_clock_out && !body.note) {
+      if (corrDates.length === 0) { toast("Add at least one date", true); return; }
+      var reqIn = $("#corrIn").value || null;
+      var reqOut = $("#corrOut").value || null;
+      var note = $("#corrNote").value.trim();
+      if (!reqIn && !reqOut && !note) {
         toast("Provide the correct time(s) or a note", true);
         return;
       }
+      var body = {
+        work_dates: corrDates.slice(),
+        reason: $("#corrReason").value,
+        requested_clock_in: reqIn,
+        requested_clock_out: reqOut,
+        note: note
+      };
       try {
         await api("/api/corrections", { method: "POST", body: body });
-        toast("Request submitted");
+        toast("Request submitted for " + corrDates.length + " date(s)");
         closeCorrectionModal();
         renderEmployeeDashboard();
       } catch (err) {

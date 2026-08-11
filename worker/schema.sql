@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS corrections (
   requested_clock_out TEXT,
   status              TEXT    NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
   admin_note          TEXT,
+  request_group       TEXT,                          -- shared id for dates submitted in one batch
   created_at          TEXT    NOT NULL,
   decided_at          TEXT,
   decided_by          INTEGER
