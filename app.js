@@ -740,23 +740,14 @@
   }
 
   async function startGoogleLogin(cfg) {
-    var verifier = randomB64url(48);
-    var digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
-    var challenge = b64url(new Uint8Array(digest));
     var state = randomB64url(24);
-    sessionStorage.setItem("gstate", JSON.stringify({
-      state: state,
-      verifier: verifier,
-      redirect_uri: cfg.redirect_uri
-    }));
+    sessionStorage.setItem("gstate", JSON.stringify({ state: state }));
     var q = new URLSearchParams({
       client_id: cfg.client_id,
       redirect_uri: cfg.redirect_uri,
       response_type: "code",
       scope: "openid email profile",
       state: state,
-      code_challenge: challenge,
-      code_challenge_method: "S256",
       prompt: "select_account"
     });
     location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + q.toString();

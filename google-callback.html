@@ -42,9 +42,7 @@
   </div>
 
   <script>
-    var API_BASE = "https://tksr-payroll-api.pushpinderjob.workers.dev";
     var TOKEN_KEY = "payroll_token";
-    var USER_KEY = "payroll_user";
 
     function show(msg, failed) {
       document.getElementById("state").classList.add("hidden");
@@ -57,34 +55,27 @@
       }
     }
 
-    (async function () {
-      var params = new URLSearchParams(location.search);
-      var oauthError = params.get("error");
-      var code = params.get("code");
+    (function () {
+      var params = new URLSearchParams(location.hash.substring(1));
+      var token = params.get("token");
       var state = params.get("state");
+      var error = params.get("error");
+
+      // Clear the token fragment from the address bar as soon as we're done.
+      history.replaceState(null, "", location.pathname);
+
+      if (error) return show("Sign in failed: " + error, true);
+
       var saved = null;
       try { saved = JSON.parse(sessionStorage.getItem("gstate") || "null"); } catch (e) { saved = null; }
       sessionStorage.removeItem("gstate");
 
-      if (oauthError) return show("Sign in was cancelled or denied. Please try again.", true);
-      if (!code || !saved || !state || saved.state !== state) {
+      if (!token || !saved || !state || saved.state !== state) {
         return show("This sign-in link is invalid or expired. Please try again.", true);
       }
 
-      try {
-        var res = await fetch(API_BASE + "/api/auth/google/token", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ code: code, redirect_uri: saved.redirect_uri, code_verifier: saved.verifier })
-        });
-        var data = await res.json();
-        if (!res.ok) throw new Error(data.error || ("Sign in failed (" + res.status + ")"));
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-        show();
-      } catch (e) {
-        show("Sign in failed: " + e.message, true);
-      }
+      localStorage.setItem(TOKEN_KEY, token);
+      show();
     })();
   </script>
 </body>

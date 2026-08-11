@@ -204,7 +204,7 @@ async function handleMe(request, env, user) {
 
 /* Google OAuth (Sign in with Google) */
 
-const GOOGLE_DEFAULT_REDIRECT = 'https://payroll.tksrproductservices.com/google-callback.html';
+const GOOGLE_DEFAULT_REDIRECT = 'https://tksr-payroll-api.pushpinderjob.workers.dev/api/auth/google/callback';
 
 async function handleGoogleConfig(request, env) {
   const clientId = env.GOOGLE_CLIENT_ID;
@@ -214,6 +214,82 @@ async function handleGoogleConfig(request, env) {
     client_id: clientId,
     redirect_uri: env.GOOGLE_REDIRECT_URI || GOOGLE_DEFAULT_REDIRECT
   }, 200, request);
+}
+
+async function verifyGoogleIdToken(clientId, idToken) {
+  const infoRes = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken));
+  const info = await infoRes.json().catch(() => ({}));
+  if (info.aud !== clientId) throw new HttpError(401, 'Token audience mismatch');
+  if (!['accounts.google.com', 'https://accounts.google.com'].includes(info.iss)) throw new HttpError(401, 'Token issuer mismatch');
+  if (!info.exp || info.exp * 1000 < Date.now()) throw new HttpError(401, 'Token expired');
+  if (info.email_verified === false || info.email_verified === 'false') throw new HttpError(401, 'Google email is not verified');
+  return info;
+}
+
+async function exchangeGoogleCode(env, code, redirectUri) {
+  const clientId = env.GOOGLE_CLIENT_ID;
+  const clientSecret = env.GOOGLE_CLIENT_SECRET;
+  const params = new URLSearchParams();
+  params.set('code', code);
+  params.set('client_id', clientId);
+  params.set('client_secret', clientSecret);
+  params.set('redirect_uri', redirectUri);
+  params.set('grant_type', 'authorization_code');
+
+  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: params.toString()
+  });
+  const tokData = await tokRes.json().catch(() => ({}));
+  if (!tokData.id_token) {
+    throw new HttpError(401, 'Google did not return a valid token: ' + (tokData.error_description || tokData.error || 'unknown error'));
+  }
+  return tokData.id_token;
+}
+
+async function issueJwtForGoogleUser(env, info, request) {
+  const email = String(info.email || '').trim().toLowerCase();
+  if (!email) throw new HttpError(401, 'Google account has no email');
+  const user = await getUserByEmail(env, email);
+  if (!user) throw new HttpError(403, 'No account found for ' + email + '. Ask an admin to create your account.');
+  if (!user.active) throw new HttpError(403, 'Account deactivated');
+
+  const token = await signJwt({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30
+  }, env.JWT_SECRET);
+
+  return {
+    token: token,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, salary: user.salary, active: user.active }
+  };
+}
+
+// OAuth callback: Google redirects here with ?code=&state=. We exchange the
+// code server-side (keeps the client secret private), then bounce back to the
+// app with the JWT in the URL fragment. Lives on workers.dev so it always has a
+// valid TLS certificate even while the Pages custom domain is still http-only.
+async function handleGoogleCallback(request, env, url) {
+  const appBase = env.APP_BASE || 'http://payroll.tksrproductservices.com';
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state') || '';
+  const redirectTo = appBase + '/google-callback.html#state=' + encodeURIComponent(state);
+
+  if (!code) return Response.redirect(redirectTo + '&error=' + encodeURIComponent('Google did not return an authorization code'), 302);
+
+  try {
+    const redirectUri = request.url.split('?')[0];
+    const idToken = await exchangeGoogleCode(env, code, redirectUri);
+    const info = await verifyGoogleIdToken(env.GOOGLE_CLIENT_ID, idToken);
+    const session = await issueJwtForGoogleUser(env, info, request);
+    return Response.redirect(redirectTo + '&token=' + encodeURIComponent(session.token), 302);
+  } catch (e) {
+    const msg = e instanceof HttpError ? e.message : 'Sign in failed';
+    return Response.redirect(redirectTo + '&error=' + encodeURIComponent(msg), 302);
+  }
 }
 
 async function handleGoogleToken(request, env) {
@@ -227,49 +303,10 @@ async function handleGoogleToken(request, env) {
   const verifier = body.code_verifier ? String(body.code_verifier) : '';
   if (!code) throw new HttpError(400, 'Missing authorization code');
 
-  const params = new URLSearchParams();
-  params.set('code', code);
-  params.set('client_id', clientId);
-  params.set('client_secret', clientSecret);
-  params.set('redirect_uri', redirectUri);
-  params.set('grant_type', 'authorization_code');
-  if (verifier) params.set('code_verifier', verifier);
-
-  const tokRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: params.toString()
-  });
-  const tokData = await tokRes.json().catch(() => ({}));
-  if (!tokData.id_token) {
-    throw new HttpError(401, 'Google did not return a valid token: ' + (tokData.error_description || tokData.error || 'unknown error'));
-  }
-
-  const infoRes = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(tokData.id_token));
-  const info = await infoRes.json().catch(() => ({}));
-  if (info.aud !== clientId) throw new HttpError(401, 'Token audience mismatch');
-  if (!['accounts.google.com', 'https://accounts.google.com'].includes(info.iss)) throw new HttpError(401, 'Token issuer mismatch');
-  if (!info.exp || info.exp * 1000 < Date.now()) throw new HttpError(401, 'Token expired');
-  if (info.email_verified === false || info.email_verified === 'false') throw new HttpError(401, 'Google email is not verified');
-
-  const email = String(info.email || '').trim().toLowerCase();
-  if (!email) throw new HttpError(401, 'Google account has no email');
-
-  const user = await getUserByEmail(env, email);
-  if (!user) throw new HttpError(403, 'No account found for ' + email + '. Ask an admin to create your account.');
-  if (!user.active) throw new HttpError(403, 'Account deactivated');
-
-  const token = await signJwt({
-    sub: user.id,
-    email: user.email,
-    role: user.role,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30
-  }, env.JWT_SECRET);
-
-  return respond({
-    token: token,
-    user: { id: user.id, email: user.email, name: user.name, role: user.role, salary: user.salary, active: user.active }
-  }, 200, request);
+  const idToken = await exchangeGoogleCode(env, code, redirectUri);
+  const info = await verifyGoogleIdToken(clientId, idToken);
+  const session = await issueJwtForGoogleUser(env, info, request);
+  return respond(session, 200, request);
 }
 
 function localTimeHM() {
@@ -647,6 +684,7 @@ async function route(request, env, url) {
   if (path === '/api/auth/signup' && method === 'POST') return handleSignup(request, env);
   if (path === '/api/auth/login' && method === 'POST') return handleLogin(request, env);
   if (path === '/api/auth/google/config' && method === 'GET') return handleGoogleConfig(request, env);
+  if (path === '/api/auth/google/callback' && method === 'GET') return handleGoogleCallback(request, env, url);
   if (path === '/api/auth/google/token' && method === 'POST') return handleGoogleToken(request, env);
 
   // authenticated

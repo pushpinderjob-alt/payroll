@@ -8,9 +8,10 @@ compatibility_date = "2025-09-01"
 
 # Optional: enable "Sign in with Google".
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET
+#   GOOGLE_REDIRECT_URI must match exactly what is registered in Google Console.
 [vars]
 GOOGLE_CLIENT_ID = "678365536626-2ago6n13j2a71e36jp0gi33gj2jfr30f.apps.googleusercontent.com"
-GOOGLE_REDIRECT_URI = "https://payroll.tksrproductservices.com/google-callback.html"
+GOOGLE_REDIRECT_URI = "https://tksr-payroll-api.pushpinderjob.workers.dev/api/auth/google/callback"
 
 [[d1_databases]]
 binding = "DB"
