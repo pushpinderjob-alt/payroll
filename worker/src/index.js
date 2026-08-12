@@ -273,7 +273,7 @@ async function issueJwtForGoogleUser(env, info, request) {
 // app with the JWT in the URL fragment. Lives on workers.dev so it always has a
 // valid TLS certificate even while the Pages custom domain is still http-only.
 async function handleGoogleCallback(request, env, url) {
-  const appBase = env.APP_BASE || 'http://payroll.tksrproductservices.com';
+  const appBase = env.APP_BASE || 'https://payroll.tksrproductservices.com';
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state') || '';
   const redirectTo = appBase + '/google-callback.html#state=' + encodeURIComponent(state);
