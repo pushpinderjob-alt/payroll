@@ -427,36 +427,59 @@ async function handleCreateCorrection(request, env, user) {
   const reason = String(body.reason || '').trim();
   if (!validCorrectionReason(reason)) throw new HttpError(400, 'Valid reason required');
   const note = body.note ? String(body.note).trim() : '';
-  const reqIn = validTime(body.requested_clock_in) ? body.requested_clock_in : null;
-  const reqOut = validTime(body.requested_clock_out) ? body.requested_clock_out : null;
+  const globalIn = validTime(body.requested_clock_in) ? body.requested_clock_in : null;
+  const globalOut = validTime(body.requested_clock_out) ? body.requested_clock_out : null;
 
-  if (!reqIn && !reqOut && !note) throw new HttpError(400, 'Provide the correct clock time(s) or a note');
-  if (reason === 'other' && !note) throw new HttpError(400, 'Please describe the issue in the note');
+  const rawDates = Array.isArray(body.work_dates) ? body.work_dates : (body.work_date ? [body.work_date] : []);
 
-  let dates = Array.isArray(body.work_dates) ? body.work_dates : (body.work_date ? [body.work_date] : []);
-  dates = dates.map(function (d) { return String(d).trim(); })
-    .filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d); });
-  dates = Array.from(new Set(dates)).sort();
+  // Normalize into [{ date, reqIn, reqOut }]. Elements may be plain date strings
+  // (fall back to the shared times) or objects with per-date times.
+  const entries = [];
+  for (const e of rawDates) {
+    if (e && typeof e === 'object') {
+      const d = String(e.date || e.work_date || '').trim();
+      entries.push({
+        date: d,
+        reqIn: validTime(e.requested_clock_in) ? e.requested_clock_in : (validTime(e.in) ? e.in : globalIn),
+        reqOut: validTime(e.requested_clock_out) ? e.requested_clock_out : (validTime(e.out) ? e.out : globalOut)
+      });
+    } else {
+      entries.push({ date: String(e || '').trim(), reqIn: globalIn, reqOut: globalOut });
+    }
+  }
+
+  // Keep the last entry per date, drop invalid dates, sort ascending.
+  const seen = {};
+  const dates = [];
+  for (const e of entries) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date)) continue;
+    seen[e.date] = e;
+  }
+  Object.keys(seen).sort().forEach(function (d) { dates.push(seen[d]); });
+
   if (dates.length === 0) throw new HttpError(400, 'Select at least one valid date (YYYY-MM-DD)');
   if (dates.length > 31) throw new HttpError(400, 'You can request up to 31 dates at once');
+  const anyTime = dates.some(function (e) { return e.reqIn || e.reqOut; });
+  if (!anyTime && !note) throw new HttpError(400, 'Provide the correct clock time(s) or a note');
+  if (reason === 'other' && !note) throw new HttpError(400, 'Please describe the issue in the note');
 
-  for (const d of dates) {
+  for (const e of dates) {
     const dup = await env.DB.prepare(
       "SELECT id FROM corrections WHERE user_id = ? AND work_date = ? AND status = 'pending'"
-    ).bind(user.id, d).first();
-    if (dup) throw new HttpError(409, 'You already have a pending request for ' + d);
+    ).bind(user.id, e.date).first();
+    if (dup) throw new HttpError(409, 'You already have a pending request for ' + e.date);
   }
 
   const group = randomGroupId();
   const now = new Date().toISOString();
   const rows = [];
-  for (const d of dates) {
+  for (const e of dates) {
     const cur = await env.DB.prepare(
       'SELECT clock_in, clock_out FROM attendance WHERE user_id = ? AND work_date = ?'
-    ).bind(user.id, d).first();
+    ).bind(user.id, e.date).first();
     const r = await env.DB.prepare(
       "INSERT INTO corrections (user_id, work_date, reason, note, current_clock_in, current_clock_out, requested_clock_in, requested_clock_out, status, admin_note, request_group, created_at, decided_at, decided_by) VALUES (?,?,?,?,?,?,?,?,'pending',NULL,?,?,NULL,NULL)"
-    ).bind(user.id, d, reason, note, cur ? cur.clock_in : null, cur ? cur.clock_out : null, reqIn, reqOut, group, now).run();
+    ).bind(user.id, e.date, reason, note, cur ? cur.clock_in : null, cur ? cur.clock_out : null, e.reqIn, e.reqOut, group, now).run();
     const row = await env.DB.prepare('SELECT * FROM corrections WHERE id = ?').bind(r.meta.last_row_id).first();
     rows.push(row);
   }

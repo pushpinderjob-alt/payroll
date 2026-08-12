@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payroll & Attendance | TKSR Product Services</title>
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 
@@ -302,6 +302,12 @@
             <input type="date" id="corrDate">
             <button type="button" class="btn ghost" id="corrDateAdd">Add</button>
           </div>
+          <div class="date-list-head">
+            <span>Date</span>
+            <span>Clock In</span>
+            <span>Clock Out</span>
+            <span></span>
+          </div>
           <div id="corrDateChips" class="date-chips"></div>
         </div>
         <div class="form-grid">
@@ -316,17 +322,6 @@
             </select>
           </div>
         </div>
-        <div class="form-grid">
-          <div class="field">
-            <label for="corrIn">Correct Clock In</label>
-            <input type="time" id="corrIn">
-          </div>
-          <div class="field">
-            <label for="corrOut">Correct Clock Out</label>
-            <input type="time" id="corrOut">
-          </div>
-        </div>
-        <p class="muted">The requested times below apply to every date you selected.</p>
         <div class="field">
           <label for="corrNote">Note</label>
           <textarea id="corrNote" rows="3" placeholder="e.g. The app closed before I could clock out."></textarea>
@@ -340,6 +335,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

@@ -1162,22 +1162,37 @@
     var wrap = $("#corrDateChips");
     wrap.innerHTML = "";
     corrDates.forEach(function (d) {
-      var chip = document.createElement("span");
-      chip.className = "date-chip";
-      var label = document.createElement("span");
-      label.textContent = d;
-      chip.appendChild(label);
+      var row = document.createElement("div");
+      row.className = "date-chip-row";
+      var date = document.createElement("span");
+      date.className = "chip-date";
+      date.textContent = d.date;
+      row.appendChild(date);
+      var inp = document.createElement("input");
+      inp.type = "time";
+      inp.className = "chip-time";
+      inp.value = d.in;
+      inp.setAttribute("aria-label", "Clock in " + d.date);
+      inp.addEventListener("input", function () { d.in = this.value; });
+      row.appendChild(inp);
+      var outp = document.createElement("input");
+      outp.type = "time";
+      outp.className = "chip-time";
+      outp.value = d.out;
+      outp.setAttribute("aria-label", "Clock out " + d.date);
+      outp.addEventListener("input", function () { d.out = this.value; });
+      row.appendChild(outp);
       var x = document.createElement("button");
       x.type = "button";
       x.className = "chip-x";
-      x.setAttribute("aria-label", "Remove " + d);
+      x.setAttribute("aria-label", "Remove " + d.date);
       x.textContent = "\u00D7";
       x.addEventListener("click", function () {
-        corrDates = corrDates.filter(function (y) { return y !== d; });
+        corrDates = corrDates.filter(function (y) { return y.date !== d.date; });
         renderCorrChips();
       });
-      chip.appendChild(x);
-      wrap.appendChild(chip);
+      row.appendChild(x);
+      wrap.appendChild(row);
     });
     wrap.classList.toggle("hidden", corrDates.length === 0);
   }
@@ -1186,9 +1201,9 @@
     var input = $("#corrDate");
     var d = input.value;
     if (!d) { toast("Pick a date first", true); return; }
-    if (corrDates.indexOf(d) !== -1) { toast("Date already added: " + d, true); return; }
+    if (corrDates.some(function (y) { return y.date === d; })) { toast("Date already added: " + d, true); return; }
     if (corrDates.length >= 31) { toast("Maximum 31 dates", true); return; }
-    corrDates.push(d);
+    corrDates.push({ date: d, in: "", out: "" });
     renderCorrChips();
     input.value = "";
     toast("Added " + d);
@@ -1199,8 +1214,6 @@
     renderCorrChips();
     $("#corrDate").value = todayStr();
     $("#corrReason").value = "forgot_clock_out";
-    $("#corrIn").value = "";
-    $("#corrOut").value = "";
     $("#corrNote").value = "";
     $("#corrModal").classList.remove("hidden");
   }
@@ -1222,18 +1235,17 @@
     $("#corrForm").addEventListener("submit", async function (e) {
       e.preventDefault();
       if (corrDates.length === 0) { toast("Add at least one date", true); return; }
-      var reqIn = $("#corrIn").value || null;
-      var reqOut = $("#corrOut").value || null;
       var note = $("#corrNote").value.trim();
-      if (!reqIn && !reqOut && !note) {
+      var hasTime = corrDates.some(function (x) { return x.in || x.out; });
+      if (!hasTime && !note) {
         toast("Provide the correct time(s) or a note", true);
         return;
       }
       var body = {
-        work_dates: corrDates.slice(),
+        work_dates: corrDates.map(function (x) {
+          return { date: x.date, requested_clock_in: x.in || null, requested_clock_out: x.out || null };
+        }),
         reason: $("#corrReason").value,
-        requested_clock_in: reqIn,
-        requested_clock_out: reqOut,
         note: note
       };
       try {
