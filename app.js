@@ -1054,12 +1054,12 @@
         head.appendChild(badge);
       }
       wrap.appendChild(head);
-      rows.forEach(function (c) { wrap.appendChild(adminReqRow(c, true)); });
+      rows.forEach(function (c) { wrap.appendChild(adminReqRow(c)); });
       el.appendChild(wrap);
     });
   }
 
-  function adminReqRow(c, inGroup) {
+  function adminReqRow(c) {
     var div = document.createElement("div");
     div.className = "req-row" + (c.status === "pending" ? " pending" : "");
     var main = document.createElement("div");
@@ -1087,7 +1087,7 @@
     div.appendChild(main);
     div.appendChild(corrBadgeEl(c.status));
 
-    if (c.status === "pending" && !inGroup) {
+    if (c.status === "pending") {
       var actions = document.createElement("div");
       actions.className = "req-actions";
       var ok = document.createElement("button");
@@ -1105,42 +1105,60 @@
     return div;
   }
 
-  async function decideCorrection(c, approve) {
-    var note = "";
-    if (approve) {
-      if (!confirm("Approve this request? Attendance for " + c.user_name + " on " + c.work_date + " will be updated.")) return;
-    } else {
-      note = prompt("Optional note to the employee:", "") || "";
-    }
+  var pendingDecision = null;
+
+  function openDecideModal(decision) {
+    pendingDecision = decision;
+    $("#corrDecideTitle").textContent = decision.approve ? "Approve request" : "Reject request";
+    $("#corrDecideMsg").textContent = decision.message;
+    $("#corrDecideNote").value = "";
+    var okBtn = $("#corrDecideOk");
+    okBtn.textContent = decision.approve ? "Approve" : "Reject";
+    okBtn.className = decision.approve ? "btn primary" : "btn danger";
+    $("#corrDecideModal").classList.remove("hidden");
+  }
+
+  function closeDecideModal() {
+    pendingDecision = null;
+    $("#corrDecideModal").classList.add("hidden");
+  }
+
+  async function confirmDecision() {
+    var d = pendingDecision;
+    if (!d) return;
+    pendingDecision = null;
+    var note = $("#corrDecideNote").value.trim();
+    var path = d.group
+      ? "/api/corrections/group/" + encodeURIComponent(d.group) + (d.approve ? "/approve" : "/reject")
+      : "/api/corrections/" + d.c.id + (d.approve ? "/approve" : "/reject");
     try {
-      await api("/api/corrections/" + c.id + (approve ? "/approve" : "/reject"), {
-        method: "POST",
-        body: { admin_note: note }
-      });
-      toast(approve ? "Request approved" : "Request rejected");
+      await api(path, { method: "POST", body: { admin_note: note } });
+      toast(d.approve ? "Request approved" : "Request rejected");
+      closeDecideModal();
       renderCorrections();
     } catch (e) {
       toast(e.message, true);
     }
   }
 
-  async function decideCorrectionGroup(group, approve) {
-    var note = "";
-    if (approve) {
-      if (!confirm("Approve all dates in this request? Attendance for each will be updated.")) return;
-    } else {
-      note = prompt("Optional note to the employee:", "") || "";
-    }
-    try {
-      await api("/api/corrections/group/" + encodeURIComponent(group) + (approve ? "/approve" : "/reject"), {
-        method: "POST",
-        body: { admin_note: note }
-      });
-      toast(approve ? "Request approved" : "Request rejected");
-      renderCorrections();
-    } catch (e) {
-      toast(e.message, true);
-    }
+  function decideCorrection(c, approve) {
+    openDecideModal({
+      approve: approve,
+      c: c,
+      message: approve
+        ? "Approve this request? Attendance for " + c.user_name + " on " + c.work_date + " will be updated."
+        : "Reject this request? The employee will see your note."
+    });
+  }
+
+  function decideCorrectionGroup(group, approve) {
+    openDecideModal({
+      approve: approve,
+      group: group,
+      message: approve
+        ? "Approve all dates in this request? Attendance for each will be updated."
+        : "Reject all dates in this request? The employee will see your note."
+    });
   }
 
   async function refreshReqBadge() {
@@ -1228,6 +1246,11 @@
     $("#corrDateAdd").addEventListener("click", addCorrDate);
     $("#corrDate").addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); addCorrDate(); }
+    });
+    $("#corrDecideOk").addEventListener("click", confirmDecision);
+    $("#corrDecideCancel").addEventListener("click", closeDecideModal);
+    $("#corrDecideModal").addEventListener("click", function (e) {
+      if (e.target === this) closeDecideModal();
     });
     $("#corrModal").addEventListener("click", function (e) {
       if (e.target === this) closeCorrectionModal();
