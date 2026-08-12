@@ -334,7 +334,23 @@
     </div>
   </div>
 
+  <!-- ===== CORRECTION DECISION MODAL ===== -->
+  <div id="corrDecideModal" class="modal hidden">
+    <div class="modal-box">
+      <h3 id="corrDecideTitle">Approve request</h3>
+      <p id="corrDecideMsg" class="muted" style="margin-top:4px"></p>
+      <div class="field" style="margin-top:12px">
+        <label for="corrDecideNote">Note to employee (optional)</label>
+        <textarea id="corrDecideNote" rows="3" placeholder="Optional message shown to the employee."></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn ghost" id="corrDecideCancel">Cancel</button>
+        <button type="button" class="btn primary" id="corrDecideOk">Approve</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
