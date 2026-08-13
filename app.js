@@ -1176,6 +1176,19 @@
     });
   }
 
+  async function refreshReqBadge() {
+    if (!currentUser || currentUser.role !== "admin") return;
+    try {
+      var data = await api("/api/corrections?status=pending");
+      var n = (data.corrections || []).length;
+      var badge = $("#reqBadge");
+      if (badge) {
+        badge.textContent = n > 99 ? "99+" : "" + n;
+        badge.classList.toggle("hidden", n === 0);
+      }
+    } catch (e) { /* non-fatal */ }
+  }
+
   async function refreshLeaveBadge() {
     if (!currentUser || currentUser.role !== "admin") return;
     try {
