@@ -232,6 +232,21 @@
         <div id="adminRequests" class="request-list"></div>
       </section>
 
+      <!-- ===== ADMIN: LEAVES ===== -->
+      <section id="tab-leaves" class="tab-panel">
+        <div class="panel-head">
+          <div>
+            <h2>Leaves</h2>
+            <p class="muted">Review leave requests, or allocate leave directly for employees. Approved leave marks those dates in attendance.</p>
+          </div>
+          <div class="panel-actions">
+            <button class="btn ghost" id="refreshLeaves">Refresh</button>
+            <button class="btn primary" id="allocateLeaveBtn">+ Allocate Leave</button>
+          </div>
+        </div>
+        <div id="adminLeaves" class="request-list"></div>
+      </section>
+
       <!-- ===== EMPLOYEE: DASHBOARD ===== -->
       <section id="tab-dashboard" class="tab-panel">
         <div class="panel-head">
@@ -239,7 +254,10 @@
             <h2>My Attendance</h2>
             <p class="muted" id="dashDate">Clock in when you start work and clock out when you finish.</p>
           </div>
-          <button class="btn primary" id="requestCorrectionBtn">Request Correction</button>
+          <div class="panel-actions">
+            <button class="btn ghost" id="requestLeaveBtn">Request Leave</button>
+            <button class="btn primary" id="requestCorrectionBtn">Request Correction</button>
+          </div>
         </div>
 
         <div class="clock-card" id="clockCard">
@@ -285,6 +303,12 @@
           <h3 class="card-title">My Correction Requests</h3>
           <p class="muted">Requests to fix a missed or wrong clock time. An admin must approve them.</p>
           <div id="myRequests" class="request-list"></div>
+        </div>
+
+        <div class="card">
+          <h3 class="card-title">My Leave Requests</h3>
+          <p class="muted">Applied leave for a range of dates. An admin must approve them.</p>
+          <div id="myLeaves" class="request-list"></div>
         </div>
       </section>
 
@@ -334,6 +358,80 @@
     </div>
   </div>
 
+  <!-- ===== LEAVE REQUEST MODAL (EMPLOYEE) ===== -->
+  <div id="leaveModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Request Leave</h3>
+      <form id="leaveForm" novalidate>
+        <div class="form-grid">
+          <div class="field">
+            <label for="leaveStart">From</label>
+            <input type="date" id="leaveStart">
+          </div>
+          <div class="field">
+            <label for="leaveEnd">To</label>
+            <input type="date" id="leaveEnd">
+          </div>
+        </div>
+        <div class="field">
+          <label for="leaveType">Leave Type</label>
+          <select id="leaveType">
+            <option value="casual">Casual</option>
+            <option value="sick">Sick</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="leaveNote">Reason / Note</label>
+          <textarea id="leaveNote" rows="3" placeholder="e.g. Medical appointment, family function..."></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn ghost" id="leaveCancel">Cancel</button>
+          <button type="submit" class="btn primary">Submit Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== ALLOCATE LEAVE MODAL (ADMIN) ===== -->
+  <div id="allocLeaveModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Allocate Leave</h3>
+      <form id="allocLeaveForm" novalidate>
+        <div class="field">
+          <label for="allocUser">Employee</label>
+          <select id="allocUser"></select>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="allocStart">From</label>
+            <input type="date" id="allocStart">
+          </div>
+          <div class="field">
+            <label for="allocEnd">To</label>
+            <input type="date" id="allocEnd">
+          </div>
+        </div>
+        <div class="field">
+          <label for="allocType">Leave Type</label>
+          <select id="allocType">
+            <option value="casual">Casual</option>
+            <option value="sick">Sick</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="allocNote">Reason / Note</label>
+          <textarea id="allocNote" rows="3" placeholder="e.g. Company holiday"></textarea>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn ghost" id="allocLeaveCancel">Cancel</button>
+          <button type="submit" class="btn primary">Allocate Leave</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ===== CORRECTION DECISION MODAL ===== -->
   <div id="corrDecideModal" class="modal hidden">
     <div class="modal-box">
@@ -351,6 +449,6 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

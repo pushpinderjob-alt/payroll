@@ -167,8 +167,12 @@
     if (currentUser.role === "admin") {
       renderAdminAttendance();
       refreshReqBadge();
+      refreshLeaveBadge();
       if (window._reqTimer) clearInterval(window._reqTimer);
-      window._reqTimer = setInterval(refreshReqBadge, 60000);
+      window._reqTimer = setInterval(function () {
+        refreshReqBadge();
+        refreshLeaveBadge();
+      }, 60000);
     } else {
       renderEmployeeDashboard();
     }
@@ -194,6 +198,7 @@
     if (currentUser.role === "admin") {
       tabs = [
         { id: "attendance", label: "Attendance" },
+        { id: "leaves", label: "Leaves" },
         { id: "employees", label: "Employees" },
         { id: "reports", label: "Reports" },
         { id: "requests", label: "Requests" },
@@ -207,10 +212,10 @@
       b.className = "tab" + (t.id === tabs[0].id ? " active" : "");
       b.dataset.tab = t.id;
       b.textContent = t.label;
-      if (t.id === "requests") {
+      if (t.id === "requests" || t.id === "leaves") {
         var badge = document.createElement("span");
         badge.className = "tab-badge hidden";
-        badge.id = "reqBadge";
+        badge.id = t.id === "requests" ? "reqBadge" : "leaveBadge";
         b.appendChild(document.createTextNode(" "));
         b.appendChild(badge);
       }
@@ -225,6 +230,7 @@
     $all(".tab").forEach(function (b) { b.classList.toggle("active", b.dataset.tab === tab); });
     $all(".tab-panel").forEach(function (p) { p.classList.toggle("active", p.id === "tab-" + tab); });
     if (tab === "attendance") renderAdminAttendance();
+    if (tab === "leaves") renderLeaves();
     if (tab === "employees") renderEmployees();
     if (tab === "reports") renderReports();
     if (tab === "requests") renderCorrections();
@@ -635,6 +641,7 @@
       $("#clockStatus").textContent = "Error: " + e.message;
     }
     renderMyCorrections();
+    renderMyLeaves();
   }
 
   function renderClockCard(rec, date) {
@@ -1128,14 +1135,22 @@
     if (!d) return;
     pendingDecision = null;
     var note = $("#corrDecideNote").value.trim();
-    var path = d.group
-      ? "/api/corrections/group/" + encodeURIComponent(d.group) + (d.approve ? "/approve" : "/reject")
-      : "/api/corrections/" + d.c.id + (d.approve ? "/approve" : "/reject");
+    var path, render;
+    if (d.kind === "leave") {
+      path = "/api/leaves/" + d.id + (d.approve ? "/approve" : "/reject");
+      render = renderLeaves;
+    } else if (d.group) {
+      path = "/api/corrections/group/" + encodeURIComponent(d.group) + (d.approve ? "/approve" : "/reject");
+      render = renderCorrections;
+    } else {
+      path = "/api/corrections/" + d.c.id + (d.approve ? "/approve" : "/reject");
+      render = renderCorrections;
+    }
     try {
       await api(path, { method: "POST", body: { admin_note: note } });
       toast(d.approve ? "Request approved" : "Request rejected");
       closeDecideModal();
-      renderCorrections();
+      render();
     } catch (e) {
       toast(e.message, true);
     }
@@ -1161,17 +1176,227 @@
     });
   }
 
-  async function refreshReqBadge() {
+  async function refreshLeaveBadge() {
     if (!currentUser || currentUser.role !== "admin") return;
     try {
-      var data = await api("/api/corrections?status=pending");
-      var n = (data.corrections || []).length;
-      var badge = $("#reqBadge");
+      var data = await api("/api/leaves?status=pending");
+      var n = (data.leaves || []).length;
+      var badge = $("#leaveBadge");
       if (badge) {
         badge.textContent = n > 99 ? "99+" : "" + n;
         badge.classList.toggle("hidden", n === 0);
       }
     } catch (e) { /* non-fatal */ }
+  }
+
+  /* ================= Leaves ================= */
+  function leaveTypeLabel(t) {
+    return { casual: "Casual", sick: "Sick", other: "Other" }[t] || "Leave";
+  }
+
+  function leaveSummaryText(l) {
+    return l.start_date + " \u2192 " + l.end_date + " \u00B7 " + leaveTypeLabel(l.leave_type) +
+      " \u00B7 " + l.days + " day" + (l.days > 1 ? "s" : "");
+  }
+
+  function renderMyLeaves() {
+    var el = $("#myLeaves");
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+    api("/api/leaves/mine").then(function (data) {
+      var list = data.leaves || [];
+      if (list.length === 0) {
+        el.innerHTML = '<div class="empty-state"><p>No leave requests yet.</p></div>';
+        return;
+      }
+      el.innerHTML = "";
+      list.forEach(function (l) {
+        var div = document.createElement("div");
+        div.className = "req-row";
+        var main = document.createElement("div");
+        main.className = "req-main";
+        var name = document.createElement("div");
+        name.className = "name";
+        name.textContent = leaveSummaryText(l);
+        main.appendChild(name);
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = l.status === "pending" ? "Awaiting approval" : l.status === "approved" ? "Approved" : "Rejected";
+        if (l.note) meta.textContent += " \u2014 " + l.note;
+        main.appendChild(meta);
+        if (l.status !== "pending" && l.admin_note) {
+          var note = document.createElement("div");
+          note.className = "meta-note";
+          note.textContent = "Admin: " + l.admin_note;
+          main.appendChild(note);
+        }
+        div.appendChild(main);
+        div.appendChild(corrBadgeEl(l.status));
+        el.appendChild(div);
+      });
+    }).catch(function (e) {
+      el.innerHTML = '<div class="empty-state"><p>Error: ' + esc(e.message) + "</p></div>";
+    });
+  }
+
+  function renderLeaves() {
+    var el = $("#adminLeaves");
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+    api("/api/leaves").then(function (data) {
+      var list = data.leaves || [];
+      if (list.length === 0) {
+        el.innerHTML = '<div class="empty-state"><p>No leave requests.</p></div>';
+      } else {
+        el.innerHTML = "";
+        list.forEach(function (l) { el.appendChild(adminLeaveRow(l)); });
+      }
+      refreshLeaveBadge();
+    }).catch(function (e) {
+      el.innerHTML = '<div class="empty-state"><p>Error: ' + esc(e.message) + "</p></div>";
+    });
+  }
+
+  function adminLeaveRow(l) {
+    var div = document.createElement("div");
+    div.className = "req-row" + (l.status === "pending" ? " pending" : "");
+    var main = document.createElement("div");
+    main.className = "req-main";
+    var name = document.createElement("div");
+    name.className = "name";
+    name.innerHTML = esc(l.user_name) + " \u00B7 " + esc(leaveSummaryText(l));
+    main.appendChild(name);
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = l.status === "pending" ? "Awaiting approval" : l.status === "approved" ? "Approved" : "Rejected";
+    if (l.note) meta.textContent += " \u2014 " + l.note;
+    main.appendChild(meta);
+    if (l.status !== "pending" && l.admin_note) {
+      var note = document.createElement("div");
+      note.className = "meta-note";
+      note.textContent = "Admin: " + l.admin_note;
+      main.appendChild(note);
+    }
+    div.appendChild(main);
+    div.appendChild(corrBadgeEl(l.status));
+    if (l.status === "pending") {
+      var actions = document.createElement("div");
+      actions.className = "req-actions";
+      var ok = document.createElement("button");
+      ok.className = "btn primary";
+      ok.textContent = "Approve";
+      ok.addEventListener("click", function () { decideLeave(l, true); });
+      var no = document.createElement("button");
+      no.className = "btn ghost";
+      no.textContent = "Reject";
+      no.addEventListener("click", function () { decideLeave(l, false); });
+      actions.appendChild(ok);
+      actions.appendChild(no);
+      div.appendChild(actions);
+    }
+    return div;
+  }
+
+  function decideLeave(l, approve) {
+    openDecideModal({
+      kind: "leave",
+      approve: approve,
+      id: l.id,
+      message: approve
+        ? "Approve " + l.user_name + "\u2019s leave from " + l.start_date + " to " + l.end_date + "? Those dates will be marked as leave in attendance."
+        : "Reject this leave request? The employee will see your note."
+    });
+  }
+
+  function openLeaveModal() {
+    $("#leaveStart").value = todayStr();
+    $("#leaveEnd").value = todayStr();
+    $("#leaveType").value = "casual";
+    $("#leaveNote").value = "";
+    $("#leaveModal").classList.remove("hidden");
+  }
+
+  function closeLeaveModal() {
+    $("#leaveModal").classList.add("hidden");
+  }
+
+  async function openAllocModal() {
+    var sel = $("#allocUser");
+    sel.innerHTML = "";
+    try {
+      var data = await api("/api/users");
+      var emps = (data.users || []).filter(function (u) { return u.role === "employee"; });
+      emps.forEach(function (u) {
+        var o = document.createElement("option");
+        o.value = u.id;
+        o.textContent = u.name + " (" + u.email + ")";
+        sel.appendChild(o);
+      });
+      if (emps.length === 0) {
+        var none = document.createElement("option");
+        none.value = "";
+        none.textContent = "No employees found";
+        sel.appendChild(none);
+      }
+      $("#allocStart").value = todayStr();
+      $("#allocEnd").value = todayStr();
+      $("#allocType").value = "casual";
+      $("#allocNote").value = "";
+      $("#allocLeaveModal").classList.remove("hidden");
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
+  function closeAllocModal() {
+    $("#allocLeaveModal").classList.add("hidden");
+  }
+
+  function validateLeaveRange(start, end) {
+    if (!start || !end) return "Select the leave dates";
+    if (end < start) return "End date must be on or after the start date";
+    return null;
+  }
+
+  async function submitLeaveRequest(e, adminMode) {
+    e.preventDefault();
+    var start = $("#" + (adminMode ? "allocStart" : "leaveStart")).value;
+    var end = $("#" + (adminMode ? "allocEnd" : "leaveEnd")).value;
+    var type = $("#" + (adminMode ? "allocType" : "leaveType")).value;
+    var note = $("#" + (adminMode ? "allocNote" : "leaveNote")).value.trim();
+    var bad = validateLeaveRange(start, end);
+    if (bad) { toast(bad, true); return; }
+    var body = { start_date: start, end_date: end, leave_type: type, note: note };
+    if (adminMode) {
+      body.user_id = Number($("#allocUser").value);
+      if (!body.user_id) { toast("Select an employee", true); return; }
+    }
+    try {
+      await api("/api/leaves", { method: "POST", body: body });
+      if (adminMode) {
+        toast("Leave allocated");
+        closeAllocModal();
+        renderLeaves();
+      } else {
+        toast("Leave request submitted");
+        closeLeaveModal();
+        renderEmployeeDashboard();
+      }
+    } catch (err) {
+      toast(err.message, true);
+    }
+  }
+
+  function wireLeaves() {
+    $("#requestLeaveBtn").addEventListener("click", openLeaveModal);
+    $("#leaveCancel").addEventListener("click", closeLeaveModal);
+    $("#leaveModal").addEventListener("click", function (e) { if (e.target === this) closeLeaveModal(); });
+    $("#leaveForm").addEventListener("submit", function (e) { submitLeaveRequest(e, false); });
+    $("#allocateLeaveBtn").addEventListener("click", openAllocModal);
+    $("#allocLeaveCancel").addEventListener("click", closeAllocModal);
+    $("#allocLeaveModal").addEventListener("click", function (e) { if (e.target === this) closeAllocModal(); });
+    $("#allocLeaveForm").addEventListener("submit", function (e) { submitLeaveRequest(e, true); });
+    $("#refreshLeaves").addEventListener("click", renderLeaves);
   }
 
   var corrDates = [];
@@ -1290,6 +1515,7 @@
     wireEmployee();
     wireTask();
     wireCorrections();
+    wireLeaves();
     initGoogleLogin();
     restoreSession();
   });

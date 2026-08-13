@@ -589,6 +589,142 @@ async function handleRejectCorrectionGroup(request, env, url, admin) {
   return handleDecideCorrectionGroup(request, env, url, admin, false);
 }
 
+/* Employee + admin: leave requests */
+
+function validLeaveType(t) {
+  return ['casual', 'sick', 'other'].indexOf(t) >= 0;
+}
+
+function leaveTypeLabel(t) {
+  return { casual: 'Casual', sick: 'Sick', other: 'Other' }[t] || 'Leave';
+}
+
+function daysBetween(a, b) {
+  const da = new Date(a + 'T00:00:00Z');
+  const db = new Date(b + 'T00:00:00Z');
+  return Math.round((db - da) / 86400000) + 1;
+}
+
+async function applyLeaveToAttendance(env, leave, note, now) {
+  let d = leave.start_date;
+  while (d <= leave.end_date) {
+    const existing = await env.DB.prepare(
+      'SELECT * FROM attendance WHERE user_id = ? AND work_date = ?'
+    ).bind(leave.user_id, d).first();
+    if (existing) {
+      if (!existing.clock_in && !existing.clock_out) {
+        await env.DB.prepare(
+          "UPDATE attendance SET status = 'leave', note = ?, clock_in = NULL, clock_out = NULL WHERE id = ?"
+        ).bind(note || 'On leave', existing.id).run();
+      }
+      // else keep real clocked attendance as-is
+    } else {
+      await env.DB.prepare(
+        "INSERT INTO attendance (user_id, work_date, clock_in, clock_out, status, note, task, created_at) VALUES (?,?,NULL,NULL,'leave',?,'',?)"
+      ).bind(leave.user_id, d, note || 'On leave', now).run();
+    }
+    const nd = new Date(d + 'T00:00:00Z');
+    nd.setUTCDate(nd.getUTCDate() + 1);
+    d = nd.toISOString().slice(0, 10);
+  }
+}
+
+async function handleCreateLeave(request, env, user) {
+  const body = await request.json().catch(() => ({}));
+  const start = String(body.start_date || '').trim();
+  const end = String(body.end_date || body.start_date || '').trim();
+  const type = String(body.leave_type || 'casual').trim();
+  const note = body.note ? String(body.note).trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new HttpError(400, 'Valid start date required');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(end)) throw new HttpError(400, 'Valid end date required');
+  if (end < start) throw new HttpError(400, 'End date must be on or after the start date');
+  if (!validLeaveType(type)) throw new HttpError(400, 'Valid leave type required');
+  const days = daysBetween(start, end);
+  if (days > 31) throw new HttpError(400, 'You can request up to 31 days at once');
+
+  // Admin can allocate a leave directly for another employee (approved immediately).
+  let targetUserId = user.id;
+  let allocate = false;
+  if (user.role === 'admin' && body.user_id) {
+    const tu = await env.DB.prepare('SELECT id, role FROM users WHERE id = ?').bind(Number(body.user_id)).first();
+    if (!tu) throw new HttpError(404, 'Employee not found');
+    targetUserId = tu.id;
+    allocate = true;
+  }
+
+  const over = await env.DB.prepare(
+    "SELECT id FROM leaves WHERE user_id = ? AND status = 'pending' AND start_date <= ? AND end_date >= ?"
+  ).bind(targetUserId, end, start).first();
+  if (over) throw new HttpError(409, 'There is already a pending leave request overlapping these dates');
+
+  const now = new Date().toISOString();
+  const status = allocate ? 'approved' : 'pending';
+  const r = await env.DB.prepare(
+    "INSERT INTO leaves (user_id, start_date, end_date, days, leave_type, note, status, admin_note, created_at, decided_at, decided_by) VALUES (?,?,?,?,?,?,?,NULL,?,?,?)"
+  ).bind(targetUserId, start, end, days, type, note, status, now, allocate ? now : null, allocate ? user.id : null).run();
+
+  if (allocate) {
+    await applyLeaveToAttendance(env, { user_id: targetUserId, start_date: start, end_date: end }, note || 'On ' + leaveTypeLabel(type) + ' leave', now);
+  }
+
+  const row = await env.DB.prepare('SELECT * FROM leaves WHERE id = ?').bind(r.meta.last_row_id).first();
+  return respond({ leave: row }, 201, request);
+}
+
+async function handleMyLeaves(request, env, user) {
+  const rows = await env.DB.prepare(
+    'SELECT * FROM leaves WHERE user_id = ? ORDER BY created_at DESC'
+  ).bind(user.id).all();
+  return respond({ leaves: rows.results }, 200, request);
+}
+
+async function handleListLeaves(request, env, url) {
+  const status = url.searchParams.get('status');
+  let rows;
+  if (status && ['pending', 'approved', 'rejected'].indexOf(status) >= 0) {
+    rows = await env.DB.prepare(
+      "SELECT l.*, u.name AS user_name, u.email AS user_email FROM leaves l JOIN users u ON u.id = l.user_id WHERE l.status = ? ORDER BY (l.status = 'pending') DESC, l.created_at DESC"
+    ).bind(status).all();
+  } else {
+    rows = await env.DB.prepare(
+      "SELECT l.*, u.name AS user_name, u.email AS user_email FROM leaves l JOIN users u ON u.id = l.user_id ORDER BY (l.status = 'pending') DESC, l.created_at DESC"
+    ).all();
+  }
+  return respond({ leaves: rows.results }, 200, request);
+}
+
+async function handleDecideLeave(request, env, url, admin, approve) {
+  const parts = url.pathname.split('/');
+  const id = parts[parts.length - 2];
+  if (!/^\d+$/.test(id)) throw new HttpError(400, 'Invalid leave id');
+  const body = await request.json().catch(() => ({}));
+  const adminNote = body.admin_note ? String(body.admin_note).trim() : '';
+
+  const leave = await env.DB.prepare('SELECT * FROM leaves WHERE id = ?').bind(id).first();
+  if (!leave) throw new HttpError(404, 'Leave request not found');
+  if (leave.status !== 'pending') throw new HttpError(400, 'This request has already been decided');
+
+  const now = new Date().toISOString();
+  if (approve) {
+    await applyLeaveToAttendance(env, leave, adminNote || 'On ' + leaveTypeLabel(leave.leave_type) + ' leave', now);
+  }
+
+  await env.DB.prepare(
+    'UPDATE leaves SET status = ?, admin_note = ?, decided_at = ?, decided_by = ? WHERE id = ?'
+  ).bind(approve ? 'approved' : 'rejected', adminNote || null, now, admin.id, leave.id).run();
+
+  const updated = await env.DB.prepare('SELECT * FROM leaves WHERE id = ?').bind(leave.id).first();
+  return respond({ leave: updated }, 200, request);
+}
+
+async function handleApproveLeave(request, env, url, admin) {
+  return handleDecideLeave(request, env, url, admin, true);
+}
+
+async function handleRejectLeave(request, env, url, admin) {
+  return handleDecideLeave(request, env, url, admin, false);
+}
+
 /* Admin: users */
 
 async function handleListUsers(request, env) {
@@ -818,6 +954,19 @@ async function route(request, env, url) {
   if (/^\/api\/corrections\/\d+\/reject$/.test(path) && method === 'POST') return adminOnly(handleRejectCorrection);
   if (/^\/api\/corrections\/group\/[a-f0-9]{18}\/approve$/.test(path) && method === 'POST') return adminOnly(handleApproveCorrectionGroup);
   if (/^\/api\/corrections\/group\/[a-f0-9]{18}\/reject$/.test(path) && method === 'POST') return adminOnly(handleRejectCorrectionGroup);
+
+  // leaves
+  if (path === '/api/leaves' && method === 'POST') {
+    const user = await requireUser(request, env);
+    return handleCreateLeave(request, env, user);
+  }
+  if (path === '/api/leaves/mine' && method === 'GET') {
+    const user = await requireUser(request, env);
+    return handleMyLeaves(request, env, user);
+  }
+  if (path === '/api/leaves' && method === 'GET') return adminOnly(handleListLeaves);
+  if (/^\/api\/leaves\/\d+\/approve$/.test(path) && method === 'POST') return adminOnly(handleApproveLeave);
+  if (/^\/api\/leaves\/\d+\/reject$/.test(path) && method === 'POST') return adminOnly(handleRejectLeave);
 
   if (path === '/api' || path === '/') {
     return respond({ ok: true, service: 'tksr-payroll-api' }, 200, request);

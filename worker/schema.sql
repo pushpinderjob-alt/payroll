@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS corrections (
   decided_by          INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS leaves (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL,
+  start_date  TEXT    NOT NULL,              -- local 'YYYY-MM-DD'
+  end_date    TEXT    NOT NULL,              -- inclusive local 'YYYY-MM-DD'
+  days        INTEGER NOT NULL DEFAULT 1,    -- number of days covered
+  leave_type  TEXT    NOT NULL DEFAULT 'casual', -- 'casual' | 'sick' | 'other'
+  note        TEXT,
+  status      TEXT    NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
+  admin_note  TEXT,
+  created_at  TEXT    NOT NULL,
+  decided_at  TEXT,
+  decided_by  INTEGER
+);
+
 INSERT OR IGNORE INTO settings (key, value) VALUES ('work_days_per_week', '6');
 INSERT OR IGNORE INTO settings (key, value) VALUES ('currency', '₹');
 
@@ -53,3 +68,5 @@ CREATE INDEX IF NOT EXISTS idx_attendance_user_date ON attendance (user_id, work
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance (work_date);
 CREATE INDEX IF NOT EXISTS idx_corrections_user ON corrections (user_id, status);
 CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections (status);
+CREATE INDEX IF NOT EXISTS idx_leaves_user ON leaves (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_leaves_status ON leaves (status);
