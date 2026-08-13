@@ -592,11 +592,11 @@ async function handleRejectCorrectionGroup(request, env, url, admin) {
 /* Employee + admin: leave requests */
 
 function validLeaveType(t) {
-  return ['casual', 'sick', 'other'].indexOf(t) >= 0;
+  return ['casual', 'sick', 'other', 'lwp', 'pl'].indexOf(t) >= 0;
 }
 
 function leaveTypeLabel(t) {
-  return { casual: 'Casual', sick: 'Sick', other: 'Other' }[t] || 'Leave';
+  return { casual: 'Casual', sick: 'Sick', other: 'Other', lwp: 'LWP', pl: 'PL' }[t] || 'Leave';
 }
 
 function daysBetween(a, b) {

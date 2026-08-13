@@ -319,7 +319,7 @@
     ["present", "leave", "absent"].forEach(function (s) {
       var o = document.createElement("option");
       o.value = s;
-      o.textContent = s === "present" ? "Present" : s === "leave" ? "Paid Leave" : "Absent";
+      o.textContent = s === "present" ? "Present" : s === "leave" ? "Leave" : "Absent";
       if (s === status) o.selected = true;
       statusSel.appendChild(o);
     });
@@ -415,7 +415,7 @@
     });
     $("#adminAttSummary").classList.remove("hidden");
     $("#adminAttSummary").innerHTML =
-      stat("Present", present) + stat("Paid Leave", leave) + stat("Absent", absent) +
+      stat("Present", present) + stat("Leave", leave) + stat("Absent", absent) +
       stat("Total Hours", hours ? hours.toFixed(2) + " h" : "0 h") +
       stat("Day Payroll", money(pay));
     function stat(label, val) { return '<div class="stat"><b>' + val + '</b><span>' + label + "</span></div>"; }
@@ -587,7 +587,7 @@
     var emps = rows.map(function (r) { return r.emp; });
     var totalPay = rows.reduce(function (s, r) { return s + r.earned; }, 0);
     var totalHours = rows.reduce(function (s, r) { return s + r.hours; }, 0);
-    var lines = ["Employee,Monthly Salary,Present,Paid Leave,Absent,Hours Worked,Salary This Month"];
+    var lines = ["Employee,Monthly Salary,Present,Leave,Absent,Hours Worked,Salary This Month"];
     rows.forEach(function (r) {
       lines.push([
         '"' + r.emp.name.replace(/"/g, '""') + '"',
@@ -654,7 +654,7 @@
 
     if (!rec || !rec.clock_in) {
       status.textContent = (rec && rec.status === "leave")
-        ? "Marked as paid leave today."
+        ? "Marked as leave today."
         : "Not clocked in yet today.";
       return;
     }
@@ -695,7 +695,7 @@
     var day = workingDaysInMonth(month, settings.work_days_per_week);
     el.innerHTML =
       '<div class="report-card"><div class="label">Days Present</div><div class="value">' + present + "</div></div>" +
-      '<div class="report-card"><div class="label">Paid Leave</div><div class="value">' + leave + "</div></div>" +
+      '<div class="report-card"><div class="label">Leave</div><div class="value">' + leave + "</div></div>" +
       '<div class="report-card"><div class="label">Absent</div><div class="value">' + absent + "</div></div>" +
       '<div class="report-card"><div class="label">Hours Worked</div><div class="value">' + hours.toFixed(2) + ' h</div></div>' +
       '<div class="report-card"><div class="label">Working Days</div><div class="value">' + day + "</div></div>";
@@ -710,7 +710,7 @@
     records.slice().reverse().forEach(function (r) {
       var tr = document.createElement("tr");
       var hours = hoursBetween(r.clock_in, r.clock_out);
-      var statusLabel = r.status === "present" ? "Present" : r.status === "leave" ? "Paid Leave" : "Absent";
+      var statusLabel = r.status === "present" ? "Present" : r.status === "leave" ? "Leave" : "Absent";
       var badgeClass = r.status === "present" ? "ok" : r.status === "leave" ? "leave" : "bad";
       tr.innerHTML =
         "<td>" + esc(r.work_date) + "</td>" +
@@ -1204,7 +1204,7 @@
 
   /* ================= Leaves ================= */
   function leaveTypeLabel(t) {
-    return { casual: "Casual", sick: "Sick", other: "Other" }[t] || "Leave";
+    return { casual: "Casual", sick: "Sick", other: "Other", lwp: "LWP", pl: "PL" }[t] || "Leave";
   }
 
   function leaveSummaryText(l) {

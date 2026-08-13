@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS leaves (
   start_date  TEXT    NOT NULL,              -- local 'YYYY-MM-DD'
   end_date    TEXT    NOT NULL,              -- inclusive local 'YYYY-MM-DD'
   days        INTEGER NOT NULL DEFAULT 1,    -- number of days covered
-  leave_type  TEXT    NOT NULL DEFAULT 'casual', -- 'casual' | 'sick' | 'other'
+  leave_type  TEXT    NOT NULL DEFAULT 'casual', -- 'casual' | 'sick' | 'pl' | 'lwp' | 'other'
   note        TEXT,
   status      TEXT    NOT NULL DEFAULT 'pending', -- 'pending' | 'approved' | 'rejected'
   admin_note  TEXT,
